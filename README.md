@@ -1,2 +1,2 @@
-# Suicide_Prevention_Overview
+# Suicide Prevention Overview
 Repository to reproduce results of our Suicide Prevention Overview
