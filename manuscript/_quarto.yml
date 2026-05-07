@@ -1,0 +1,32 @@
+project:
+  type: book
+  output-dir: ../docs
+
+book:
+  title: "Effectiveness of school-based suicide prevention interventions: An overview of systematic reviews"
+  chapters:
+    - index.qmd
+    - 00-overview.qmd
+    - 01-background.qmd
+    - 02-methods.qmd
+    - 03-results.qmd
+    - 04-discussion.qmd
+    - 05-references.qmd
+    - 06-figures.qmd
+    - 07-tables.qmd
+    - 08-additional-info.qmd
+    - 09-appendices.qmd
+
+crossref:
+  chapters: false
+
+format:
+  html:
+    theme: spacelab
+    toc: true
+    number-sections: true
+
+execute:
+  echo: false
+  warning: false
+  message: false

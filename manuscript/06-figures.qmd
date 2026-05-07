@@ -1,0 +1,99 @@
+
+```{r}
+#| include: false
+
+library(tidyverse)
+library(ccaR)
+
+objs <- readRDS(here::here("outputs", "objects", "analysis_script_objects.rds"))
+list2env(objs, envir = knitr::knit_global()) 
+
+resize_geom_text <- function(p, sizes) {
+  text_layers <- which(vapply(p$layers, function(x) inherits(x$geom, "GeomText"), logical(1)))
+  
+  if(length(sizes) == 1) {
+    sizes <- rep(sizes, length(text_layers))
+  }
+  
+  stopifnot(length(sizes) == length(text_layers))
+  
+  for(i in seq_along(text_layers)) {
+    p$layers[[text_layers[i]]]$aes_params$size <- sizes[i]
+  }
+  
+  p
+}
+
+```
+
+# Figures
+
+## Figure 1. Flow diagram for selection of sources of evidence {#sec-figure1}
+
+
+```{r}
+#| #label: fig-figure1
+#| #fig-cap: ""
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 10
+#| dpi: 300
+#| out-width: "100%"
+
+resize_geom_text(
+  spo_overview_prisma,
+  sizes = c(5, 5, 4.1, 6)
+)
+
+```
+
+## Figure 2. Overlap of included studies across systematic reviews {#sec-figure2}
+
+
+```{r}
+#| #label: fig-figure2
+#| #fig-cap: "Overlap amongst Reviews"
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 7
+#| fig-height: 6
+#| dpi: 300
+#| out-width: "100%"
+
+
+# Create heatmap first
+f2 <- cca_heatmap(cca_inc, decimal_digits = 0, fontsize = 8, fontsize_diag = 5)
+
+# Grab existing caption from cca_heatmap and append note
+existing_caption <- f2$labels$caption
+combined_caption <- paste(
+  c(existing_caption, star_note),
+  collapse = "\n"
+)
+
+# Apply updated caption and theme
+ f2 +
+  ggplot2::labs(caption = combined_caption) +
+  ggplot2::theme(
+    plot.caption = ggplot2::element_text(size = 11, margin = ggplot2::margin(30,0,0,0)),
+    legend.title = ggplot2::element_text(size = 16, face = "bold", vjust = 4),
+    legend.text = ggplot2::element_text(size = 14),
+    legend.key.size = ggplot2::unit(1.0, "cm"),
+    legend.title.align = 0.5,
+    legend.text.align = 0.5,
+    axis.text.x = ggplot2::element_text(size = 18),
+    axis.text.y = ggplot2::element_text(size = 18),
+    axis.title = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+  )
+
+
+```
+
+

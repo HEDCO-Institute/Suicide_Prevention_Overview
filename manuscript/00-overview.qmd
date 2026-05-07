@@ -1,0 +1,24 @@
+
+```{r}
+#| include: false
+
+objs <- readRDS(here::here("outputs", "objects", "analysis_script_objects.rds"))
+list2env(objs, envir = knitr::knit_global())
+
+```
+
+# Overview
+
+The objective of this overview is to examine the XX at primary and secondary schools in the United States. Compared to traditional systematic reviews estimating the effects of interventions, overviews explore XX, XX, and XX (CITATION?). Overviews are particularly useful for XX. Consequently, an overview can provide useful insights about XX for XX.
+
+## Abstract
+
+**Background:** Suicide is a leading cause of death in youth. This overview aims to summarize systematic reviews with meta-analyses estimating the effects of school-based suicide prevention interventions on suicide-related outcomes. 
+**Methods:** We conducted electronic bibliographic searches, hand-searched relevant journals, and conducted forward and backward citation chasing to identify eligible reviews. Two reviewers independently screened records, assessed full texts for eligibility, and collected data. We quantified the overlap of primary studies across systematic reviews using Corrected Covered Area (CCA) and narratively summarized meta-analytic findings. 
+**Results:** We identified `r format_thousands(overview_counts$reviews_included)` eligible systematic reviews with `r nrow(td_cm)` primary studies overall. Only `r num_inc_overlap` primary studies (`r format_percent(num_inc_overlap_per, 1)`) were included in more than one review (CCA = `r format_percent(cca_included$CCA_Percentage, 1)`). We rated most reviews as critically low (`r format_percent(amstar_clow_per, 1)`) quality on AMSTAR-2 and high risk of bias (`r format_percent(robis_high_per, 1)`) on ROBIS. Reviews mostly suggest school-based suicide prevention interventions may have modest average positive impacts on suicidal behaviors and suicidal ideation, though mixed results on suicide-related outcomes by intervention approach, school level, and follow-up timing.
+**Conclusions:** School-based suicide prevention interventions may be beneficial on average, though existing reviews have important methodological limitations. A living systematic review conducted according to methodological best-practice could provide timely, relevant, and rigorous evidence for educators.
+	
+	*Keywords:* suicide, meta-analysis, school, systematic review, prevention, overview of reviews, umbrella review
+	
+
+

@@ -1,0 +1,154 @@
+```{r}
+#| include: false
+
+objs <- readRDS(here::here("outputs", "objects", "analysis_script_objects.rds"))
+list2env(objs, envir = knitr::knit_global())
+
+library(kableExtra)
+library(tidyverse)
+
+```
+
+# Tables
+
+## Table 1. Eligibility criteria for including and excluding references in the overview {#sec-table1}
+
+```{r}
+#| #label: tbl-table1
+#| #tbl-cap: "Inclusion and Exclusion Criteria"
+#| echo: false
+#| message: false
+#| warning: false
+
+
+
+# Define PICO elements
+population_include    <- "Primary and secondary students (K-12 in the U.S.)"
+population_exclude    <- "Pre-K, college students"
+
+intervention_include  <- "Universal prevention, selective prevention, or indicated prevention delivered to students"
+intervention_exclude  <- "Screening-only, treatment, or chronic case management interventions not delievered directly to students"
+
+comparators_include   <- "Any comparison group"
+comparators_exclude   <- "No comparison group"
+
+outcomes_include      <- "Suicide (completed or attempted), suicidal ideation, parasuicide"
+outcomes_exclude      <- "None"
+
+timing_include        <- "Timing of follow-up not limited"
+timing_exclude        <- "None"
+
+setting_include       <- "Primary and secondary schools (K-12 in the U.S.)"
+setting_exclude       <- "Non-school setting (e.g., community-based intervention)"
+
+publications_include  <- "Systematic reviews with meta-analysis, published in 1900 or later, written in English, peer-reviewed and grey literature"
+publications_exclude  <- "Full report not available, no meta-analysis of at least one suicide outcome, published before 1990"
+
+# Assemble into a data frame
+criteria_df <- tibble(
+  Criteria = c("Population",
+               "Interventions",
+               "Comparators",
+               "Outcomes",
+               "Timing",
+               "Setting",
+               "Design and Publication"),
+  Include  = c(population_include,
+               intervention_include,
+               comparators_include,
+               outcomes_include,
+               timing_include,
+               setting_include,
+               publications_include),
+  Exclude  = c(population_exclude,
+               intervention_exclude,
+               comparators_exclude,
+               outcomes_exclude,
+               timing_exclude, 
+               setting_exclude,
+               publications_exclude)
+)
+
+# Render as an HTML table
+criteria_df %>%
+  kable(
+    format    = "html",
+    align     = c("l","l","l"),
+    escape    = TRUE
+  ) %>%
+  kable_styling(
+    full_width = FALSE,
+    position   = "center",
+    bootstrap_options = c("striped", "hover", "condensed")
+  )
+
+```
+
+
+## Table 2. Descriptive characteristics of included systematic reviews {#sec-table2}
+
+```{r}
+#| #label: tbl-table2
+#| #tbl-cap: "Review Characteristics"
+#| echo: false
+#| message: false
+#| warning: false
+
+table1_formatted
+
+```
+
+
+## Table 3. Methodological Quality of Included Systematic Reviews according to AMSTAR-2 Assessments {#sec-table3}
+
+```{r}
+#| #label: tbl-table3
+#| #tbl-cap: "Quality Assessment"
+#| echo: false
+#| message: false
+#| warning: false
+
+t2_formatted
+
+```
+
+## Table 4. Risk of Bias in Included Systematic Reviews according to ROBIS Assessments {#sec-table4}
+
+```{r}
+#| #label: tbl-table4
+#| #tbl-cap: "Risk of Bias Assessment"
+#| echo: false
+#| message: false
+#| warning: false
+
+t3_formatted
+
+```
+
+## Table 5. Overall meta-analytic estimates {#sec-table5}
+
+```{r}
+
+#| echo: false
+#| message: false
+#| warning: false
+
+t5_formatted
+
+```
+
+## Table 6. Meta-analytic estimates by intervention type, contrasts, or non-primary outcomes {#sec-table6}
+
+```{r}
+
+#| echo: false
+#| message: false
+#| warning: false
+
+t6_formatted
+
+```
+
+
+
+

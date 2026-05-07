@@ -1,0 +1,53 @@
+
+```{r}
+#| include: false
+
+objs <- readRDS(here::here("outputs", "objects", "analysis_script_objects.rds"))
+list2env(objs, envir = knitr::knit_global())
+
+```
+
+# Appendices
+
+## Appendix 1. List of Excluded Reviews {#sec-appendix1}
+
+```{r}
+#| #label: tbl-a1
+#| #tbl-cap: "Excluded Reviews"
+#| echo: false
+#| message: false
+#| warning: false
+
+a1_formatted
+
+```
+
+
+## Appendix 2. List of Reviews Awaiting Classification {#sec-appendix2}
+
+```{r}
+#| #label: tbl-a2
+#| #tbl-cap: "Reviews Awaiting Classification"
+#| echo: false
+#| message: false
+#| warning: false
+
+a3_formatted
+
+```
+
+
+## Appendix 3. Descriptive Characteristics for Included Systematic Reviews {#sec-appendix3}
+
+```{r}
+#| #label: tbl-a3
+#| #tbl-cap: "Review Information"
+#| echo: false
+#| message: false
+#| warning: false
+
+# Print in document
+htmltools::browsable(htmltools::HTML(html_code))
+
+```
+

@@ -1,0 +1,19 @@
+# Additional Information
+
+## Author Contributions (CRediT - Contributor Roles Taxonomy)
+
+NEEDS UPDATED!
+
+Conceptualization (LKC, SG), Data Curation (SDT, SG), Formal Analysis (LKC, SDT), Funding Acquisition (EETS), Investigation (LKC, SG), Methodology (LKG, SG, SDT, KSF, ED, EETS), Project Administration (SDT, LKG, SG), Resources (EETS), Software (SDT), Supervision (SG, ED, EETS), Validation (SDT, LKC), Visualization (SDT), Writing – Original Draft (LKG, SDT, KSF), Writing – Review & Editing (LKG, SDT, KSF, SG, ED, EETS).
+
+## Funding
+
+Core funding for the HEDCO Institute for Evidence-Based Educational Practice is provided by donor funds to the University of Oregon. The funders had no role in study design, data collection and analysis, preparation of this manuscript, or decisions about publication and other dissemination.
+
+## Data Availablility
+
+The study registration, including the protocol and analysis plan, data, and code for this overview of systematic reviews is publicly available on the Open Science Framework at https://osf.io/4cqsw/overview. 
+
+## Conflict of Interest Disclosure
+
+SG’s spouse is an employee of Eli Lilly and owns stock. All other authors have no disclosures to report.
