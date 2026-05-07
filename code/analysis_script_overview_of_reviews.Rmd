@@ -1,0 +1,1484 @@
+---
+title: "Suicide Prevention - Overview of Reviews - Descriptive Results"
+author: "Shaina Trevino"
+date: "2026-03-16"
+output: html_document
+---
+
+```{r renv-setup}
+## If renv environment does not load automatically, uncomment and run the below code:
+
+# if (!require("renv)) install.packages("renv")
+# renv::restore()
+
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, include = FALSE)
+
+
+library(rio)
+library(here)
+library(readxl)
+library(janitor)
+library(tidyverse)
+library(openxlsx)
+library(lubridate)
+library(gt)
+library(webshot2)
+library(ccaR)
+library(glue)
+
+## If library didn't work, try un-commenting and running the below code:
+
+# if (!require("pacman")) install.packages("pacman") #installs and loads pacman package
+# 
+# pacman::p_load(devtools, rio, here, readxl, janitor, tidyverse, openxlsx, lubridate, gt, webshot2, glue) #install and load required packages
+# pacman::p_load_gh("thdiakon/ccaR", "mcguinlu/robvis") #from github
+
+
+
+```
+
+```{r import}
+# Eligibility (with linked refs; datarama report)
+spo_eligibility_raw <- import(here("data", "SPO_screening_eligibility.xlsx")) %>% 
+  janitor::clean_names()
+# Check unique IDs
+length(unique(spo_eligibility_raw$refid)) == nrow(spo_eligibility_raw)
+
+# Import Quarantine Duplicates (Download from DistillerSR Quarantine)
+spo_duplicates <- import(here("data", "SPO_duplicate_refs.csv")) %>% 
+  janitor::clean_names()
+
+# Import Review Level Data
+spo_review_level <- import(here("data", "SPO_review_level.xlsx")) %>% 
+  janitor::clean_names()
+
+
+# Import citation matrix
+elig_path <- here("data", "Suicide_citation_matrix_reconciled.xlsx")
+
+citation_matrix <- read_excel(elig_path, sheet = "Citation Matrix", col_names = FALSE)
+
+
+```
+
+```{r tidy}
+# eligibility
+colnames(citation_matrix) <- citation_matrix[1,]
+td_cm <- citation_matrix %>% 
+  slice(-1)
+
+spo_eligibility <- spo_eligibility_raw %>% 
+  mutate(
+    eligibility_exclude_reason = if_else(
+      !is.na(eligibility_notes) &
+        str_detect(eligibility_notes, fixed("; Study")) &
+        eligibility_exclude_reason == "Unclear (provide reason in comments)",
+      "Ineligible study design (not a systematic review or primary study)",
+      eligibility_exclude_reason
+    )
+  )
+
+
+#review level
+review_td <- spo_review_level %>% 
+  select(-starts_with("amstar"), -starts_with("robis")) %>% 
+  mutate(review_publication_year = as.numeric(review_publication_year))
+
+amstar_rating_td <- spo_review_level %>% 
+  select(refid, review_author_year, starts_with("amstar")) %>% 
+  select(refid, review_author_year, ends_with("rating"))
+
+robis_rating_td <- spo_review_level %>% 
+  select(refid, review_author_year, starts_with("robis")) %>% 
+  select(refid, review_author_year, ends_with("decision"), robis_overall_a, robis_overall_b, robis_overall_c, 
+         robis_overall_rating)
+
+```
+
+
+```{r functions}
+#Write functions for formatting inline code
+format_thousands <- function(x) {
+  big_num <- format(x, big.mark = ",")
+  return(big_num)
+}
+
+format_percent <- function(x, digits, force_decimal = FALSE) {
+  if (force_decimal) {
+    percentage <- paste0(format(round(x, digits), nsmall = digits), "%")
+  } else {
+    percentage <- paste0(round(x, digits), "%")
+  }
+  return(percentage)
+}
+```
+
+
+
+# Results
+
+```{r exclude_reasons}
+summary(as.factor(spo_eligibility$eligibility_exclude_reason))
+
+overview_counts <- list(
+  records_identified = nrow(spo_eligibility) + nrow(spo_duplicates),
+  records_screened = nrow(spo_eligibility),
+  records_kept = sum(spo_eligibility$screening_decision == "Keep", na.rm = TRUE),
+  reports_not_retrieved = sum(spo_eligibility$pdf_retrieved == "No", na.rm = TRUE),
+  reports_assessed = sum(spo_eligibility$screening_decision == "Keep", na.rm = TRUE) - 
+    sum(spo_eligibility$pdf_retrieved == "No", na.rm = TRUE),
+  reviews_included = nrow(spo_review_level),
+  reports_included = sum(
+    spo_eligibility$eligibility_decision == "Eligible" &
+      spo_eligibility$eligibility_reference_type == "Review",
+    na.rm = TRUE
+  )
+)
+
+# Percentages
+overview_counts$prop_kept <- overview_counts$records_kept / overview_counts$records_screened * 100
+overview_counts$prop_ref_assessed <- overview_counts$reports_assessed / overview_counts$records_screened * 100
+overview_counts$prop_reviews_assessed <- overview_counts$reviews_included / overview_counts$reports_assessed * 100
+overview_counts$prop_reviews_identified <- overview_counts$reviews_included / overview_counts$records_identified * 100
+
+```
+
+Our search yielded `r format_thousands(overview_counts$records_identified)` citations (see *Figure 1*). 
+After removing duplicates, we screened `r format_thousands(overview_counts$records_screened)` records and retained `r format_thousands(overview_counts$reports_assessed)` records (`r format_percent(overview_counts$prop_ref_assessed, 1)`) for full-text eligibility assessment. Of the `r format_thousands(overview_counts$reports_assessed)` full-texts assessed, we identified `r format_thousands(overview_counts$reviews_included)` eligible systematic reviews with information reported across `r format_thousands(overview_counts$reports_included)` records (`r format_percent(overview_counts$prop_reviews_assessed, 1)` of full-texts assessed for eligibility; `r format_percent(overview_counts$prop_reviews_identified, 1)` of all citations identified in our search). *Appendix 3* contains detailed information on the `r format_thousands(overview_counts$reviews_included)` included systematic reviews.
+
+## Characteristics of Included Systematic Reviews
+
+```{r review-char}
+#Calculate most commonly searched databases
+#change string to lowercase and create flag if each database was searched
+rev_df <- review_td %>% 
+  mutate(review_databases_searched = str_to_lower(review_databases_searched),
+         pubmed = str_detect(review_databases_searched, "pubmed"),
+         psycinfo = str_detect(review_databases_searched, "psycinfo"),
+         medline = str_detect(review_databases_searched, "medline|ovid"),
+         eric = str_detect(review_databases_searched, "eric|education resources information center"),
+         ebsco = str_detect(review_databases_searched, "ebsco"),
+         proquest_dt = str_detect(review_databases_searched, "dissertation and theses|dissertation results on proquest"),
+         psycarticles = str_detect(review_databases_searched, "psycarticles"),
+         psycextra = str_detect(review_databases_searched, "psycextra|psychextra"),
+         cochrance_central = str_detect(review_databases_searched, "cochrane central"),
+         cochrane_library = str_detect(review_databases_searched, "cochrane library"),
+         wos = str_detect(review_databases_searched, "web of science"),
+         academic_ap = str_detect(review_databases_searched, "academic search premier"),
+         pbs_collection = str_detect(review_databases_searched, "psychology and behavioral sciences collection|psychology and behavioralsciences"),
+         cinahl = str_detect(review_databases_searched, "cinahl"),
+         embase = str_detect(review_databases_searched, "embase"),
+         science_cit_index = str_detect(review_databases_searched, "science citation index"),
+         sci_direct = str_detect(review_databases_searched, "science direct|sciencedirect"),
+         scopus = str_detect(review_databases_searched, "scopus"),
+         gscholar = str_detect(review_databases_searched, "google scholar|googlescholar"),
+         british_ni = str_detect(review_databases_searched, "british nursing index"),
+         britich_ei = str_detect(review_databases_searched, "british education index"),
+         assia = str_detect(review_databases_searched, "assia"),
+         diss_abs = str_detect(review_databases_searched, "dissertation abstracts"),
+         socio_abs = str_detect(review_databases_searched, "sociological abstracts"),
+         won = str_detect(review_databases_searched, "web of knowledge"),
+         ctg = str_detect(review_databases_searched, "clinicaltrials.gov"),
+         prosp = str_detect(review_databases_searched, "prospero"),
+         optn  = str_detect(review_databases_searched, "opentrials.net"), #Added for suicide
+         edrc = str_detect(review_databases_searched, "education research complete"), #Added for suicide
+         edsrc = str_detect(review_databases_searched, "education source"), #Added for suicide
+         epist = str_detect(review_databases_searched, "epistemonikos"))
+
+#create long dataframe
+review_databases <- rev_df %>% 
+  select(refid, pubmed:epist) %>% 
+  pivot_longer(cols = pubmed:epist) %>% 
+  mutate(value = as.character(value))
+
+#calculate most common databases searched and 
+#remove cases where reviews said both pubmed and medline but only searched one
+mode_databases <- review_databases %>% 
+  group_by(name) %>% 
+  summarize(num_db = sum(value == "TRUE"),
+            percent = sum(value == "TRUE") / nrow(review_td) * 100) %>% 
+  arrange(desc(num_db))
+
+#Year of last database search
+#extract review year from search data
+review_df <- review_td %>% 
+  mutate(db_search_year = as.numeric(str_extract(review_search_date, "[0-9]{4}")))
+
+#Transparency
+#number of reviews with flow diagrams
+num_prisma <- sum(review_df$review_flow_diagram == "Yes", na.rm = TRUE) 
+
+#number of reviews with registration number
+num_reg <- sum(review_df$review_registration_number != "-999") 
+
+#number of reviews with availability statements
+num_avail <- sum(review_df$review_availability_statement != "-999")
+
+
+```
+
+
+Overall, these `r nrow(review_td)` reviews were published between `r min(review_td$review_publication_year)` and `r max(review_td$review_publication_year)`, with a median publication year of `r median(review_td$review_publication_year)` (see *Table 1*). These reviews most commonly searched  *APA PsycInfo* (`r mode_databases$num_db[1]` reviews; `r format_percent(mode_databases$percent[1], 1)`), *Cochrane Central Register of Controlled Trials* (`r mode_databases$num_db[2]` reviews; `r format_percent(mode_databases$percent[2], 1)`), *MEDLINE* (`r mode_databases$num_db[3]` reviews; `r format_percent(mode_databases$percent[3], 1)`), and *ERIC* (`r mode_databases$num_db[4]` reviews; `r format_percent(mode_databases$percent[4], 1)`) to identify primary studies. The year that each review last conducted their literature search ranged from `r min(review_df$db_search_year, na.rm = TRUE)` to `r max(review_df$db_search_year, na.rm = TRUE)`, with a median of `r ceiling(median(review_df$db_search_year, na.rm = TRUE))`. Regarding research transparency, `r num_prisma` reviews (`r format_percent(num_prisma / nrow(review_df) * 100, 1)`) included a flow diagram of information through the different phases of a systematic review (Page et al., 2021), `r num_reg` reviews (`r format_percent(num_reg / nrow(review_df) * 100, 1)`) reported a registration number for their review (Booth et al., 2012), and `r num_avail` reviews (`r format_percent(num_avail / nrow(review_df) *100, 1)`) provided statements about the data and code underlying the review (Page et al., 2022). 
+
+### Methodological Quality and Risk of Bias of Included Systematic Reviews
+
+```{r rob-inline}
+#number/% of high confidence
+amstar_high <- sum(amstar_rating_td$amstar_overall_rating == "HIGH") 
+amstar_high_per <- amstar_high  / nrow(amstar_rating_td) * 100 
+
+#number/% of moderate confidence
+amstar_mod <- sum(amstar_rating_td$amstar_overall_rating == "MODERATE")
+amstar_mod_per <- amstar_mod  / nrow(amstar_rating_td) * 100 
+
+#number/% of low confidence
+amstar_low <- sum(amstar_rating_td$amstar_overall_rating == "LOW")
+amstar_low_per <- amstar_low  / nrow(amstar_rating_td) * 100 
+
+#number/% of critically low confidence
+amstar_clow <- sum(amstar_rating_td$amstar_overall_rating == "CRITICALLY LOW")
+amstar_clow_per <- amstar_clow  / nrow(amstar_rating_td) * 100 
+
+#Calculate most common critical weaknesses in AMSTAR ratings among reviews
+#filter for critical domains
+amstar_crit <- amstar_rating_td %>% 
+  select(refid, amstar_2_rating, amstar_4_rating, amstar_7_rating, amstar_9rct_rating, amstar_9nrsi_rating,
+         amstar_11rct_rating, amstar_11rct_rating, amstar_13_rating, amstar_15_rating) %>% 
+  pivot_longer(cols = -refid)
+
+#calculate frequency for "No"s per critical domains
+amstar_crit_mode <- amstar_crit %>% 
+  group_by(name) %>% 
+  summarize(n = sum(value == "No"),
+            percent = sum(value == "No") / nrow(amstar_rating_td) * 100) %>% 
+  arrange(desc(n))
+
+#Calculate most common non-critical weaknesses in AMSTAR ratings among reviews
+#filter for non-critical domains
+amstar_noncrit <- amstar_rating_td %>% 
+  select(refid, amstar_1_rating, amstar_3_rating, amstar_5_rating, amstar_6_rating, amstar_8_rating, 
+         amstar_10_rating, amstar_12_rating, amstar_14_rating, amstar_16_rating) %>% 
+  pivot_longer(cols = -refid)
+
+#calculate frequency for "No"s per non-critical domains
+amstar_noncrit_mode <- amstar_noncrit %>% 
+  group_by(name) %>% 
+  summarize(n = sum(value == "No"),
+            percent = sum(value == "No") / nrow(amstar_rating_td) * 100) %>% 
+  arrange(desc(n))
+
+#ROBIS results
+#number/% of low risk
+robis_low <- sum(robis_rating_td$robis_overall_rating == "LOW")
+robis_low_per <- robis_low  / nrow(robis_rating_td) * 100 
+
+#number/% of unclear risk
+robis_unclear <- sum(robis_rating_td$robis_overall_rating == "UNCLEAR") 
+robis_unclear_per <- robis_unclear  / nrow(robis_rating_td) * 100 
+
+#number/% of high risk
+robis_high <- sum(robis_rating_td$robis_overall_rating == "HIGH") 
+robis_high_per <- robis_high  / nrow(robis_rating_td) * 100 
+
+#select ratings, transform to long format, calculate percent with high risk
+robis_concerns <- robis_rating_td %>% 
+  select(refid, ends_with("decision"), robis_overall_a, 
+         robis_overall_b, robis_overall_c) %>% 
+  pivot_longer(cols = 2:8) %>% 
+  group_by(name) %>% 
+  summarize(n_decision = sum(value == "HIGH"),
+            per_decision = sum(value == "HIGH") / nrow(robis_rating_td) * 100,
+            n_overall = sum(value == "No"),
+            per_overall = sum(value == "No") / nrow(robis_rating_td) * 100) %>% 
+  arrange(desc(n_decision))
+
+
+```
+
+
+AMSTAR-2 assessments (see *Table 2*) yielded methodological quality ratings of low for `r amstar_low` reviews (`r format_percent(amstar_low_per, 1)`) and critically low for `r amstar_clow` reviews (`r format_percent(amstar_clow_per, 1)`). The most common critical weaknesses in methodological quality were *not providing justification for excluding individual studies* (`r amstar_crit_mode$n[1]` reviews; `r format_percent(amstar_crit_mode$percent[1], 1)`), *not considering risk of bias when interpreting the results of the review* (`r amstar_crit_mode$n[2]` reviews; `r format_percent(amstar_crit_mode$percent[2], 1)`), and *not having a protocol registered before commencement of the review* (`r amstar_crit_mode$n[3]` reviews; `r format_percent(amstar_crit_mode$percent[3], 1)`). 
+
+The most common non-critical weaknesses in methodological quality were *not reporting funding sources for included studies* (`r amstar_noncrit_mode$n[1]` reviews; `r format_percent(amstar_noncrit_mode$percent[1], 1)`), *not assessing the impact of risk of bias in individual studies on evidence synthesis results* (`r amstar_noncrit_mode$n[2]` reviews; `r format_percent(amstar_noncrit_mode$percent[2], 1)`), and *not explaining the selection criteria used to identify included study designs* (`r amstar_noncrit_mode$n[3]` reviews; `r format_percent(amstar_noncrit_mode$percent[3], 1)`). 
+
+ROBIS assessments (see *Table 3*) yielded ratings of low risk of bias for `r robis_low` reviews (`r format_percent(robis_low_per, 1)`, unclear risk of bias for `r robis_unclear` review `r format_percent(robis_unclear_per, 1)`), and high risk of bias for `r robis_high` reviews (`r format_percent(robis_high_per, 1)`). Concerns about risk of bias were most commonly related to *study eligibility criteria* (`r robis_concerns$n_decision[1]` reviews; `r format_percent(robis_concerns$per_decision[1], 1)`), *identification and selection of studies* (`r robis_concerns$n_decision[2]` reviews; `r format_percent(robis_concerns$per_decision[2], 1)`), and *synthesis and findings* (`r robis_concerns$n_decision[3]` reviews; `r format_percent(robis_concerns$per_decision[3], 1)`).
+
+
+### Overlap of Primary Studies Across Systematic Reviews
+
+```{r overlap}
+#number of included primary studies
+#num_elig_stud <- length(inc_ps)
+
+#using citation matrix without headers, transpose data 
+cmt <- as.data.frame(t(citation_matrix))
+
+
+#remove first row of column names and second row with current study inclusions
+#create new variable to calculate number of studies in each review
+df_overlap <- cmt %>% 
+  slice(-1) %>% 
+  mutate(num_stud = rowSums(. == "Yes")) 
+
+#range and median of number of studies in each review
+range(df_overlap$num_stud) 
+median(df_overlap$num_stud) 
+
+#Number and percentage of primary studies included in more than one review
+#create flag for if study is in more than one review
+cm_overlap <- td_cm %>% 
+  #select(-`Current Review`, -refid) %>% 
+  mutate(morethanone = ifelse(rowSums(. == "Yes") > 1, "yes", "no"))
+
+#number and % included in more than one review
+num_inc_overlap <- sum(cm_overlap$morethanone == "yes")
+num_inc_overlap_per <- sum(cm_overlap$morethanone == "yes") / nrow(cm_overlap) * 100
+
+# #Number and percentage of eligible primary studies included in more than one review
+# #filter for eligible primary studies
+# elig_cm <- ps_cm %>%
+#   filter(refid %in% inc_ps) %>% 
+#   select(-`Current Review`, -refid)
+# 
+# #create flag if eligible study is included in more than one review
+# elig_overlap <- elig_cm %>%
+#   mutate(morethanone = ifelse(rowSums(. == "1 - Yes") >1, "yes", "no"))
+# 
+# #number and % of eligible studies included in more than one review
+# num_elig_overlap <- sum(elig_overlap$morethanone == "yes")
+# num_elig_overlap_per <- ifelse(num_elig_overlap == 0, 0, num_elig_overlap / nrow(elig_overlap) * 100)
+
+#Overall CCA percentage for all primary studies included across reviews
+#create dataframe for ccaR input (1 = included; 0 = excluded)
+ccar_input <- td_cm %>% 
+  #select(-`Current Review`, -refid) %>% 
+  mutate_at(vars(-study), ~ifelse(. == "Yes", 1, 0))  
+
+#calculate overall CCA
+cca_included <- cca(ccar_input) 
+cca_included
+
+# #Overall CCA percentage for primary studies meeting our eligibility criteria
+# ccar_input_elig <- ps_cm %>% 
+#   filter(refid %in% inc_ps) %>% 
+#   select(-`Current Review`, -refid) %>% 
+#   mutate_at(vars(-study), ~ifelse(. == "1 - Yes", 1, 0)) 
+# 
+# #calculate overall CCA
+# cca_eligible <- cca(ccar_input_elig)
+# cca_eligible
+
+
+#REMOVED
+ # Of the `r num_elig_stud` primary studies meeting our eligibility criteria, `r num_elig_overlap` studies (`r format_percent(num_elig_overlap_per, 1)`) were included in more than one review (see *Figure 3*).
+#lower than the overall CCA percentage for primary studies meeting our eligibility criteria (`r format_percent(cca_eligible$CCA_Percentage, 1)`)
+```
+
+
+The number of primary studies included in each review ranged from `r min(df_overlap$num_stud)` to `r max(df_overlap$num_stud)`, with a median of `r round(median(df_overlap$num_stud))`. Of the `r nrow(td_cm)` primary studies included across all reviews, `r num_inc_overlap` studies (`r format_percent(num_inc_overlap_per, 1)`) were included in more than one review (see *Figure 2*). The overall CCA percentage for all primary studies included across reviews was `r format_percent(cca_included$CCA_Percentage, 1)`, indicating *high* overlap in primary studies across reviews.
+
+
+# Figures, Tables, Appendices
+
+### Figure 1. PRISMA
+
+```{r PRISMA}
+
+
+
+# Function for PRISMA for Overviews - from make_prisma_diagrams.R (HEDCO R project)
+make_prisma_overview_plot <- function(elig_df, dupe_df, review_df) {
+  
+  # Create objects needed from variables
+  number_of_duplicates <- nrow(dupe_df)
+  number_search_results <- nrow(elig_df) + number_of_duplicates
+  number_dropped <- sum(elig_df$screening_decision == "Drop")
+  number_kept <- sum(elig_df$screening_decision == "Keep")
+  number_not_retrieved <- sum(elig_df$pdf_retrieved == "No", na.rm = TRUE)
+  number_ineligible <- sum(elig_df$eligibility_decision == "Not Eligible" | elig_df$eligibility_reference_type == "Study", na.rm = TRUE)
+  number_eligible <- nrow(review_df)
+  number_eligible_reports <- sum(elig_df$eligibility_decision == "Eligible" & elig_df$eligibility_reference_type == "Review", na.rm = TRUE)
+  
+  # Calculate exclusion counts
+  exclusion_reasons_summary <- elig_df %>% 
+    mutate(reason = dplyr::case_when(
+      eligibility_reference_type == "Study" ~ "Ineligible study design",
+      TRUE ~ as.character(eligibility_exclude_reason))) %>% 
+    filter(!is.na(reason)) %>% 
+    count(reason, name = "n") %>% 
+    arrange(desc(n))
+  
+  # Define PRISMA Counts
+  records_identified <- number_search_results
+  duplicates_removed <- number_of_duplicates
+  records_screened <- records_identified - duplicates_removed
+  records_excluded <- number_dropped
+  reports_sought <- number_kept
+  reports_not_retrieved <- number_not_retrieved
+  reports_assessed <- reports_sought - reports_not_retrieved
+  reports_excluded_total <- number_ineligible
+  studies_included <- number_eligible
+  reports_included <- number_eligible_reports
+  
+  
+  # Expose as a named vector for easy glue’ing
+  exclusion_counts <- setNames(
+    exclusion_reasons_summary$n,
+    exclusion_reasons_summary$reason
+  )
+  
+  # Collapse into markdown bullets
+  bullet_text <- glue_collapse(
+    glue("- {names(exclusion_counts)}: {exclusion_counts}"),
+    sep = "\n"
+  )
+  
+  cat(bullet_text)
+  
+  
+  # # Define Exclusion Reasons (Correctly Formatted with Line Breaks)
+  # exclusion_reasons <- glue("
+  # - Ineligible concept (not 4DSW): {159}
+  # - Ineligible context (not K-12): {9}
+  # - Ineligible context (not US): {16}
+  # - Ineligible design (not empirical research): {180}
+  # - Ineligible publication (not English): {3}
+  # ")
+  
+  
+  ## PLOT -------
+  
+  # Define box content: x, y = center positions; label = box text
+  boxes <- tibble(
+    x = c(3, 6.5, 3, 6.5, 3, 6.5, 3, 6.5, 3),
+    y = c(9, 9, 7.5, 7.5, 6, 6, 4.5, 3.9, 3),
+    height = c(rep(1, 7), 2.8, 1),
+    width  = c(rep(2.6, 7), 3.5, 2.6),
+    label = c(
+      glue("Records identified\n(n = {formatC(records_identified, format = 'd', big.mark = ',')})"),
+      glue("Duplicates removed\n(n = {formatC(duplicates_removed, format = 'd', big.mark = ',')})"),
+      glue("Records screened\n(n = {formatC(records_screened, format = 'd', big.mark = ',')})"),
+      glue("Records excluded\n(n = {formatC(records_excluded, format = 'd', big.mark = ',')})"),
+      glue("Reports sought\n(n = {formatC(reports_sought, format = 'd', big.mark = ',')})"),
+      glue("Not retrieved\n(n = {formatC(reports_not_retrieved, format = 'd', big.mark = ',')})"),
+      glue("Assessed for eligibility\n(n = {formatC(reports_assessed, format = 'd', big.mark = ',')})"),
+      NA_character_,
+      glue("Studies included\n(n = {formatC(studies_included, format = 'd', big.mark = ',')})\nReports = {formatC(reports_included, format = 'd', big.mark = ',')}")
+    ),
+    label_top = NA_character_,
+    label_bullets = NA_character_
+  )
+  
+  # Centered top line for “Reports excluded”
+  boxes$label_top[8] <- glue(
+    "Reports excluded\n(n = {formatC(reports_excluded_total, format = 'd', big.mark = ',')})\n"
+  )
+  
+  
+  # Dynamically inject the bullets for row 8
+  boxes$label_bullets[8] <- bullet_text
+  
+  
+  # Define arrow segments (from_x, from_y, to_x, to_y)
+  arrows <- tribble(
+    ~x,  ~y,   ~xend, ~yend,
+    3,   8.5,    3,     8,   # Records identified → Records screened
+    4.3,   9,    5.2,     9,     # Records identified → Duplicates removed
+    3,   7,  3,     6.5,     # Records screened → Reports sought
+    4.3,   7.5,  5.2,     7.5,   # Records screened → Records excluded
+    3,   5.5,    3,     5,   # Reports sought → Assessed for eligibility
+    4.3,   6,    5.2,     6,     # Reports sought → Not retrieved
+    3,   4,  3,     3.5,     # Assessed → Included
+    4.3,   4.5,  4.75,     4.5    # Assessed → Reports excluded
+  )
+  
+  # Define section headers
+  sections <- data.frame(
+    label = c("Identification", "Screening", "Included"),
+    x = c(1, 1, 1),
+    y = c(9, 6, 3),
+    height = c(1.6, 4.1, 1.5)
+  )
+  
+  
+  # Plot
+  ggplot() +
+    # Boxes
+    geom_rect(data = boxes, aes(xmin = x - width/2, xmax = x + width/2,
+                                ymin = y - height/2, ymax = y + height/2),
+              fill = "white", color = "black") +
+    
+    # geom_text(data = boxes, aes(x = x, y = y, label = label),
+    #           size = 3, lineheight = 1.1) +
+    
+    # Normal text
+    geom_text(data = boxes, aes(x = x, y = y, label = label), size = 3.2, lineheight = 1.1) +
+    
+    # Centered top line for reports excluded
+    geom_text(data = boxes[8, ], aes(x = x, y = y + 1.1, label = label_top),
+              size = 3.2, hjust = 0.5, lineheight = 1.1) +
+    
+    # Left-aligned bullets
+    geom_text(data = boxes[8, ], aes(x = x - 1.55, y = y - 0.25, label = label_bullets),
+              size = 3, hjust = 0, lineheight = 1.1) +
+    
+    
+    # Arrows
+    geom_segment(data = arrows,
+                 aes(x = x, y = y, xend = xend, yend = yend),
+                 arrow = arrow(length = unit(0.15, "inches")),
+                 lineend = "round") +
+    
+    # Section header background
+    geom_rect(data = sections,
+              aes(xmin = x - 0.25, xmax = x + 0.25,
+                  ymin = y - height / 2, ymax = y + height / 2),
+              fill = "lightblue", color = NA) +
+    
+    # Section header text
+    geom_text(data = sections,
+              aes(x = x, y = y, label = label),
+              angle = 90, size = 4) +
+    
+    coord_equal() +
+    theme_void()
+  
+}
+
+# USE THE FUNCTION ON SUICIDE DATA 
+
+# If needed, rename Exclusion reasons
+spo_eligibility <- spo_eligibility %>%
+  mutate(
+    eligibility_exclude_reason = eligibility_exclude_reason %>%
+      stringr::str_remove_all("\\s*\\([^)]*\\)") %>%  #remove " (anything)"
+      stringr::str_trim()                             #remove leading/trailing spaces
+  )
+
+spo_overview_prisma <- make_prisma_overview_plot(elig_df = spo_eligibility, dupe_df = spo_duplicates, review_df = spo_review_level)
+
+spo_overview_prisma
+
+#ggsave(filename = "outputs/figures/SPO_PRISMA.png", spo_overview_prisma)
+
+
+```
+
+
+### Figure 2. Overlap of included studies across systematic reviews
+
+Create CCA heatmap of overlap of included studies across reviews:
+
+```{r ccaR-f2}
+asterisk_studies <- td_cm %>%
+  filter(str_detect(study, "\\*$")) %>%
+  pull(study) %>%
+  str_remove("\\*$")
+
+# Helper function to buid caption text
+asterisk_caption <- if(length(asterisk_studies) == 0){
+  NULL
+} else if(length(asterisk_studies) == 1){
+  glue("Only meta-analyzed studies were reported for {asterisk_studies}.")
+} else {
+  study_text <- toString(asterisk_studies)
+  study_text <- sub(", ([^,]+)$", ", and \\1", study_text)
+  glue("Only meta-analyzed studies were reported for {study_text}")
+}
+
+# Identify review columns with trailing asterisks
+starred_reviews <- names(td_cm) %>%
+  .[. != "study"] %>%
+  .[str_detect(., "\\*$")] %>%
+  str_remove("\\*$")
+
+# Create sentence for caption
+star_note <- if(length(starred_reviews) == 0){
+  NULL
+} else if(length(starred_reviews) == 1){
+  glue("Only meta-analyzed studies were reported for {starred_reviews}")
+} else if(length(starred_reviews) == 2){
+  glue("Only meta-analyzed studies were reported for {starred_reviews[1]} and {starred_reviews[2]}")
+} else {
+  glue(
+    "Only meta-analyzed studies were reported for {paste(starred_reviews[-length(starred_reviews)], collapse = ', ')}, and {starred_reviews[length(starred_reviews)]}"
+  )
+}
+
+# Remove trailing asterisks from review column names
+td_cm_clean <- td_cm
+names(td_cm_clean) <- names(td_cm_clean) %>%
+  str_replace("\\*$", "")
+
+#format citation matrix including our review
+cca_inc <- td_cm_clean %>% 
+  #select(-refid) %>% 
+  mutate_at(vars(-study), ~ifelse(. == "Yes", 1, 0)) 
+
+#Create heatmap first
+f2 <- cca_heatmap(cca_inc, decimal_digits = 0, fontsize = 12, fontsize_diag = 8)
+
+#Grab existing caption from cca_heatmap and append note
+existing_caption <- f2$labels$caption
+combined_caption <- paste(
+  c(existing_caption, star_note),
+  collapse = "\n"
+)
+
+# #create pairwise heatmap with CCA(%), including our review
+# f2 <- cca_heatmap(cca_inc, decimal_digits = 0, fontsize = 12, fontsize_diag = 8) +
+#   ggplot2::labs(caption = asterisk_caption) +
+#   ggplot2::theme(
+#       plot.caption = ggplot2::element_text(size = 20, margin=ggplot2::margin(30,0,0,0)),
+#       legend.title = ggplot2::element_text(size = 20, face = "bold", vjust=4),
+#       legend.text  = ggplot2::element_text(size = 20),
+#       legend.key.size = ggplot2::unit(1.0, "cm"),
+#       legend.title.align = 0.5,
+#       legend.text.align = 0.5,
+#       axis.text.x=ggplot2::element_text(size = 26),
+#       axis.text.y=ggplot2::element_text(size = 26),
+#       axis.title=ggplot2::element_blank(),
+#       axis.ticks=ggplot2::element_blank(),
+#       axis.line=ggplot2::element_blank(),
+#       panel.border=ggplot2::element_blank(),
+#       panel.grid.major.x=ggplot2::element_line(colour = "grey80", linetype = "dashed"))
+
+#Apply updated caption and theme
+f2 <- f2 +
+  ggplot2::labs(caption = combined_caption) +
+  ggplot2::theme(
+    plot.caption = ggplot2::element_text(size = 20, margin = ggplot2::margin(30,0,0,0)),
+    legend.title = ggplot2::element_text(size = 20, face = "bold", vjust = 4),
+    legend.text = ggplot2::element_text(size = 20),
+    legend.key.size = ggplot2::unit(1.0, "cm"),
+    legend.title.align = 0.5,
+    legend.text.align = 0.5,
+    axis.text.x = ggplot2::element_text(size = 26),
+    axis.text.y = ggplot2::element_text(size = 26),
+    axis.title = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+  )
+
+f2
+
+```
+
+Save figure 2 to `outputs/figures` project folder: 
+
+```{r save-f2}
+# #set image dimensions and file path to save
+# png(here("outputs", "figures", "figure2_heatmap.png"), width = 1000, height = 1000)
+# 
+# #show plot
+# f2
+# 
+# #save png of plot
+# dev.off()
+```
+
+### Figure 3. Overlap of eligible studies across systematic reviews
+
+Filter for studies that met our inclusion criteria and create CCA heatmap of our eligible studies across reviews: 
+
+```{r ccaR-elig-f3}
+# #format citation matrix of eligible studies, including our review
+# cca_elig <- ps_cm %>% 
+#   filter(refid %in% inc_ps_wlinked) %>% 
+#   select(-refid) %>% 
+#   mutate_at(vars(-study), ~ifelse(. == "1 - Yes", 1, 0))  %>% 
+#   rename(` Current Review` = `Current Review`)
+# 
+# #create pairwise heatmap with CCA(%)
+# f3 <- cca_heatmap(cca_elig, decimal_digits = 0, fontsize = 7.5, fontsize_diag = 4.5) +
+#   ggplot2::theme(
+#       plot.caption = ggplot2::element_text(size = 16, margin=ggplot2::margin(30,0,0,0)),
+#       legend.title = ggplot2::element_text(size = 16, face = "bold", vjust=4),
+#       legend.text = ggplot2::element_text(size = 16),
+#       legend.key.size = ggplot2::unit(1.0, "cm"),
+#       legend.title.align = 0.5,
+#       legend.text.align = 0.5,
+#       axis.text.x = ggplot2::element_text(size = 22),
+#       axis.text.y = ggplot2::element_text(size = 22),
+#       axis.title = ggplot2::element_blank(),
+#       axis.ticks = ggplot2::element_blank(),
+#       axis.line = ggplot2::element_blank(),
+#       panel.border = ggplot2::element_blank(),
+#       panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed"))
+# 
+# print(f3)
+
+```
+
+Save figure 3 to `outputs/figures` project folder: 
+
+```{r save-f3}
+# #set image dimensions and file path to save
+# png(here("outputs", "figures", "figure3_heatmap.png"), width = 1000, height = 1000)
+# 
+# #show plot
+# f3
+# 
+# #save png of plot
+# dev.off()
+```
+
+
+### Table 1. Descriptive characteristics per each included systematic review
+
+```{r t1-reviewchar}
+#select info we for table1
+t1_info <- review_td %>% 
+  select(refid, review_author_year, review_databases_searched, review_search_date)
+
+#transform to long to calculate # of included/eligible studies per review
+cm_long <- td_cm %>% 
+  pivot_longer(cols = -study,
+               names_to = "review_author_year") 
+
+#count number of included studies per review
+numinc_perreview <- cm_long %>% 
+  group_by(review_author_year) %>% 
+  summarize(n_included = sum(value == "Yes", na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  mutate(review_author_year = str_remove(review_author_year, "\\*$")) 
+
+# #create list of included study names for merging
+# inc_ps_name <- td_cm %>% 
+#   filter(refid %in% inc_ps_wlinked) %>% 
+#   pull(study)
+# 
+# #count number of eligible studies per review
+# numelig_perreview <- cm_long %>% 
+#   filter(study %in% inc_ps_name) %>% 
+#   group_by(review_author_year) %>% 
+#   summarize(n_eligible = sum(value == "1 - Yes", na.rm = TRUE)) %>% 
+#   ungroup()
+
+#merge and format values
+t1 <- left_join(t1_info, numinc_perreview) %>% 
+  #left_join(numelig_perreview) %>% 
+  mutate(search_date_format = ifelse(nchar(review_search_date) == 10, format(ymd(review_search_date), "%B %d, %Y"), review_search_date)) %>% 
+  mutate(search_date_format = ifelse(nchar(review_search_date) == 7, format(ym(review_search_date), "%B %Y"), search_date_format)) %>% 
+  mutate_all(~ replace(., . == -999, "Not Reported")) %>% 
+  select(review_author_year, review_databases_searched, search_date_format, n_included) %>% #, n_eligible
+  arrange(str_to_lower(review_author_year))
+
+#create gt table and format
+table1_formatted <- t1 %>% 
+  gt() %>% 
+  cols_align(columns = c("n_included"), align = "center") %>% #, "n_eligible"
+  tab_style(style = cell_text(align = "left"), locations = cells_column_labels(columns = c("n_included"))) %>% #, "n_eligible"
+  cols_width(review_author_year ~ px(125), review_databases_searched ~ px(275), search_date_format ~ px(150), starts_with("n") ~ px(75)) %>% 
+  cols_label(review_author_year = "Review", 
+            review_databases_searched = "Databases Searched",
+            search_date_format = "Search Date",
+            n_included = "Included Studies"#,
+            #n_eligible = "Eligible Studies"
+            ) %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1))),
+            locations = cells_body(columns = everything())) %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1)),
+                         cell_text(weight = "bold")),
+            locations = cells_column_labels()) %>% 
+  tab_options(column_labels.border.top.color = "black",
+              column_labels.border.bottom.color = "black",
+              table_body.border.bottom.color = "black",
+              table.border.top.color = "white",
+              heading.border.bottom.color = "black",
+              table_body.hlines.color = "white",
+              table.font.names = "Times New Roman")
+
+print(table1_formatted)
+
+```
+
+```{r save-t1}
+#save table
+#save as word doc
+#gtsave(table1_formatted, filename = "table1_word.docx", device = "word", path = here("outputs", "tables"), landscape = TRUE) #landscape doesn't work
+
+#save as pdf
+#gtsave(table1_formatted, filename = "table1.pdf") 
+
+#save as html with larger column widths
+table1_html <- table1_formatted %>% 
+  cols_width(review_author_year ~ px(175), review_databases_searched ~ px(700), search_date_format ~ px(150), starts_with("n") ~ px(75))
+
+#gtsave(table1_html, filename = "table_1.html", path = here("outputs", "tables"))
+
+#export as excel to transfer to word - word output not working on gt table
+#rio::export(t1, here("outputs", "tables", "t1_excel.xlsx"))
+
+```
+
+
+### Table 2. AMSTAR-2 Ratings per Question
+
+```{r t2-amstar}
+#re-format ratings to report in table 2
+t2 <- amstar_rating_td %>% 
+  mutate(review_author_year = as.factor(review_author_year)) %>% 
+  mutate_if(is.character, ~case_when(. == "HIGH" ~ "H",
+                                     . == "MODERATE" ~ "M",
+                                     . == "LOW" ~ "L",
+                                     . == "CRITICALLY LOW" ~ "CL",
+                                     . == "Yes" ~ "Y",
+                                     . == "Partial Yes" ~ "PY",
+                                     . == "No" ~ "N",
+                                     TRUE ~ .)) %>% 
+  select(-refid, -amstar_11nrsi_rating, -amstar_9nrsi_rating) %>% #temporarily remove nrsi ratings to fit template
+  arrange(str_to_lower(review_author_year))
+
+#create gt table and format
+t2_formatted <- t2 %>% 
+  gt() %>% 
+  cols_label(review_author_year = "Review", 
+            amstar_overall_rating = "Overall",
+            amstar_1_rating = "1",
+            amstar_2_rating = "2",
+            amstar_3_rating = "3",
+            amstar_4_rating = "4",
+            amstar_5_rating = "5",
+            amstar_6_rating = "6",
+            amstar_7_rating = "7",
+            amstar_8_rating = "8",
+            amstar_9rct_rating = "9",
+            amstar_10_rating = "10",
+            amstar_11rct_rating = "11",
+            amstar_12_rating = "12",
+            amstar_13_rating = "13",
+            amstar_14_rating = "14",
+            amstar_15_rating = "15",
+            amstar_16_rating = "16") %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1))),
+            locations = cells_body(columns = everything())) %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1)),
+                         cell_text(weight = "bold")),
+            locations = cells_column_labels()) %>% 
+   tab_options(column_labels.border.top.color = "black",
+              column_labels.border.bottom.color = "black",
+              table_body.border.bottom.color = "black",
+              table.border.top.color = "white",
+              heading.border.bottom.color = "black",
+              table_body.hlines.color = "white",
+              table.border.bottom.color = "white",
+              table.font.names = "Times New Roman") %>% 
+  cols_width(review_author_year ~ px(175),
+             amstar_overall_rating ~ px(75),
+             everything() ~ px(35)) %>% 
+  tab_style(style = cell_text(align = "center"), locations = cells_column_labels(columns = everything())) %>% 
+  tab_style(style = cell_text(align = "left"), locations = cells_column_labels(columns = "review_author_year")) %>% 
+  tab_style(style = cell_text(align = "center"), locations = cells_body(columns = everything())) %>% 
+  tab_style(style = cell_text(align = "left"), locations = cells_body(columns = "review_author_year")) %>% 
+  tab_footnote(footnote = "N = No; PY = Partial Yes; Y = Yes; CL = Critically Low; L = Low; M = Moderate; H = High") %>% 
+  data_color(columns = 2:18,
+             colors = scales::col_factor(palette = c("#ab1d1a", "#8ace7e", "#e03531", "#ffda66", "#e03531", "#b2dfa8", "#8ace7e"),
+                                         domain = c("CL", "H", "L", "M", "N", "PY", "Y")))
+             
+          
+print(t2_formatted)
+```
+
+```{r t2-save}
+#save as HTML
+#gtsave(t2_formatted, filename = "table_2.html", path = here("outputs", "tables"))
+
+#save as word doc
+#gtsave(t2_formatted, filename = "table2_word.docx", path = here("outputs", "tables"))
+
+#export as excel to transfer to word - word output not working on gt table
+#rio::export(t2, here("outputs", "tables", "t2_excel.xlsx"))
+```
+
+### Table 3. Risk of Bias in Included Systematic Reviews (ROBIS)
+
+```{r t3-robis}
+#remove leading numbers, select variables
+t3 <- robis_rating_td %>% 
+    mutate_if(is.character, ~case_when(. == "HIGH" ~ "High",
+                                     . == "LOW" ~ "Low",
+                                     . == "UNCLEAR" ~ "Unclear",
+                                     TRUE ~ .)) %>% 
+  select(review_author_year, ends_with("decision"), robis_overall_a, robis_overall_b, robis_overall_c, robis_overall_rating) %>% 
+  arrange(str_to_lower(review_author_year))
+
+#create gt table
+t3_formatted <- t3 %>% 
+  gt() %>% 
+  cols_label(review_author_year = "Review", 
+             robis_1_decision = "Domain 1",
+             robis_2_decision = "Domain 2",
+             robis_3_decision = "Domain 3",
+             robis_4_decision = "Domain 4",
+             robis_overall_a = "Interpretation",
+             robis_overall_b = "Relevance",
+             robis_overall_c = "Spin",
+             robis_overall_rating = "Overall") %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1))),
+            locations = cells_body(columns = everything())) %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1)),
+                         cell_text(weight = "bold")),
+            locations = cells_column_labels()) %>% 
+   tab_options(column_labels.border.top.color = "black",
+              column_labels.border.bottom.color = "black",
+              table_body.border.bottom.color = "black",
+              table.border.top.color = "white",
+              heading.border.bottom.color = "black",
+              table_body.hlines.color = "white",
+              table.border.bottom.color = "white",
+              table.font.names = "Times New Roman") %>% 
+   cols_width(review_author_year ~ px(165),
+              robis_overall_a ~ px(110),
+              robis_overall_b ~ px(100),
+              robis_overall_c ~ px(100),
+              everything() ~ px(100),
+              robis_overall_rating ~ px(50)) %>% 
+  data_color(columns = 2:9,
+             colors = scales::col_factor(palette = c("#e03531", "#8ace7e", "#e03531", "gray60", "#ef9997", "#b2dfa8", "#ffda66", "#8ace7e"),
+                                         domain = c("High", "Low", "No", "No Information", "Probably No", "Probably Yes", "Unclear", "Yes")))
+
+
+print(t3_formatted)
+
+```
+
+```{r t3-save}
+#save as html
+#gtsave(t3_formatted, filename = "table_3.html", path = here("outputs", "tables"))
+
+#save as word doc
+#gtsave(t3_formatted, filename = "table3_word.docx", path = here("outputs", "tables"))
+
+#export as excel to transfer to word - word output not working on gt table
+#rio::export(t3, here("outputs", "tables", "t3_excel.xlsx"))
+
+```
+
+
+### Appendices
+
+#### Appendix 1. List of excluded reviews
+
+```{r a1-excludedreviews}
+#import citation info 
+review_elig_citations <- spo_eligibility
+
+#create df of excluded reviews and citations
+a1_info <- review_elig_citations %>% 
+  filter(eligibility_decision == "Not Eligible") %>% 
+  filter(eligibility_exclude_reason != "Unclear") %>% 
+  rename(citation = bibliography) %>% 
+  select(citation, eligibility_exclude_reason) %>% 
+  arrange(str_to_lower(stringi::stri_trans_general(citation, "Latin-ASCII")))
+
+# temp <- a1_info %>% 
+#   slice(1:50)
+# 
+# rio::export(temp, "refs_to_fix.xlsx")
+
+# #create table
+# a1_formatted <- a1_info %>% 
+#   gt()  %>% 
+#   cols_label(citation = "Excluded Review", 
+#              eligibility_exclude_reason = "Reason for Exclusion") %>% 
+#   tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1))),
+#             locations = cells_body(columns = everything())) %>% 
+#   tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1)),
+#                          cell_text(weight = "bold")),
+#             locations = cells_column_labels()) %>% 
+#   tab_options(column_labels.border.top.color = "black",
+#               column_labels.border.bottom.color = "black",
+#               table_body.border.bottom.color = "black",
+#               table.border.top.color = "white",
+#               heading.border.bottom.color = "black",
+#               table_body.hlines.color = "white",
+#               table.border.bottom.color = "white",
+#               table.font.names = "Times New Roman") %>% 
+#   tab_header(title = md("**<div style='text-align: center;'>Appendix 1</div>**<div style='text-align: center; margin-top:10px; margin-bottom:20px;'>**List of Reviews Excluded at Full-Text Eligibility Assessment**<br></div>")) %>% 
+#   tab_style(style = list(cell_text(align = "center")),
+#             locations = cells_title(groups = "title")) %>% 
+#     cols_align(
+#     align = "left",
+#     columns = everything()
+#   ) 
+
+a1_formatted <- a1_info %>% 
+  gt() %>% 
+  cols_label(
+    citation = "Excluded Review", 
+    eligibility_exclude_reason = "Reason for Exclusion"
+  ) %>% 
+  tab_style(
+    style = list(
+      cell_borders(sides = "all", color = "black", weight = px(1))
+    ),
+    locations = cells_body(columns = everything())
+  ) %>% 
+  tab_style(
+    style = list(
+      cell_borders(sides = "all", color = "black", weight = px(1)),
+      cell_text(weight = "bold")
+    ),
+    locations = cells_column_labels()
+  ) %>% 
+  tab_style(
+    style = cell_text(align = "left"),
+    locations = cells_column_labels(columns = citation)
+  ) %>% 
+  tab_style(
+    style = cell_text(align = "left"),
+    locations = cells_body(columns = citation)
+  ) %>% 
+  tab_options(
+    column_labels.border.top.color = "black",
+    column_labels.border.bottom.color = "black",
+    table_body.border.bottom.color = "black",
+    table.border.top.color = "white",
+    heading.border.bottom.color = "black",
+    table_body.hlines.color = "white",
+    table.border.bottom.color = "white",
+    table.font.names = "Times New Roman"
+  ) %>% 
+  tab_header(
+    title = md("**<div style='text-align: center;'>Appendix 1</div>**<div style='text-align: center; margin-top:10px; margin-bottom:20px;'>**List of Reviews Excluded at Full-Text Eligibility Assessment**<br></div>")
+  ) %>% 
+  tab_style(
+    style = list(cell_text(align = "center")),
+    locations = cells_title(groups = "title")
+  )
+
+print(a1_formatted)
+
+```
+
+```{r a1-save}
+# #save as word
+# gtsave(a1_formatted, filename = "appendix1_word.docx", path = here("outputs", "appendices"))
+# 
+# #save as html
+# gtsave(a1_formatted, filename = "appendix_1.html", path = here("outputs", "appendices"))
+
+#save as pdf
+#gtsave(a1_formatted, filename = "appendix1_pdf.pdf")
+
+#export as excel to transfer to word - word output not working on gt table
+#rio::export(a1_info, here("outputs", "appendices", "a1_excel.xlsx"))
+```
+
+
+#### Appendix 2. Reviews awaiting classification 
+
+```{r a3-awaitingclassification}
+#create df with studies awaiting classification
+a3_info <- review_elig_citations %>% 
+  filter(eligibility_exclude_reason == "Unclear") %>% 
+  mutate(eligibility_notes = str_remove_all(eligibility_notes, "\\(.*?\\)")) %>% 
+  mutate(eligibility_notes = str_remove_all(eligibility_notes, "; Review")) %>% 
+  rename(citation = bibliography) %>% 
+  select(citation, eligibility_notes) %>% 
+  arrange(str_to_lower(stringi::stri_trans_general(citation, "Latin-ASCII")))
+
+
+
+#create formatted gt table
+a3_formatted <- a3_info %>% 
+  gt()  %>% 
+  cols_label(citation = "Review", 
+             eligibility_notes = "Reason") %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1))),
+            locations = cells_body(columns = everything())) %>% 
+  tab_style(style = list(cell_borders(sides = "all", color = "black", weight = px(1)),
+                         cell_text(weight = "bold")),
+            locations = cells_column_labels()) %>% 
+  tab_options(column_labels.border.top.color = "black",
+              column_labels.border.bottom.color = "black",
+              table_body.border.bottom.color = "black",
+              table.border.top.color = "white",
+              heading.border.bottom.color = "black",
+              table_body.hlines.color = "white",
+              table.border.bottom.color = "white",
+              table.font.names = "Times New Roman") %>% 
+  tab_header(title = md("**<div style='text-align: center;'>Appendix 2</div>**<div style='text-align: center; margin-top:10px; margin-bottom:20px;'>**List of Reviews Awaiting Classification**<br></div>")) %>% 
+  tab_style(style = list(cell_text(align = "center")),
+            locations = cells_title(groups = "title"))
+
+print(a3_formatted)
+
+
+```
+
+```{r a3-save}
+# # #save as word
+# gtsave(a3_formatted, filename = "appendix2_word.docx", path = here("outputs", "appendices"))
+# 
+# #save as html
+# gtsave(a3_formatted, filename = "appendix_2.html", path = here("outputs", "appendices"))
+
+# #save as pdf
+# gtsave(a3_formatted, filename = "appendix3_pdf.pdf")
+
+#export as excel to transfer to word - word output not working on gt table
+#rio::export(a3_info, here("outputs", "appendices", "a3_excel.xlsx"))
+```
+
+#### Appendix 3. Descriptive characteristics for each included systematic review
+
+```{r a4-reviewchar}
+# Create COI variable and Critical Appraisal section
+spo_review_info <- spo_review_level %>%
+  mutate(
+    review_coi = case_when(
+      amstar_16_rating == "No" ~ "Lacks reporting on funding and/or conflicts of interest",
+      
+      !is.na(amstar_16_coi_the_authors_reported_no_competing_interests_or) &
+      is.na(amstar_16_coi_the_authors_described_their_funding_sources_and_how_they_managed_potential_conflicts_of_interest) ~
+        "The authors declared no competing interests",
+      
+      is.na(amstar_16_coi_the_authors_reported_no_competing_interests_or) &
+      !is.na(amstar_16_coi_the_authors_described_their_funding_sources_and_how_they_managed_potential_conflicts_of_interest) ~
+        "Disclosed funding sources and management of any potential conflicts of interest",
+      
+      !is.na(amstar_16_coi_the_authors_reported_no_competing_interests_or) &
+      !is.na(amstar_16_coi_the_authors_described_their_funding_sources_and_how_they_managed_potential_conflicts_of_interest) ~
+        "The authors declared no competing interests and/or disclosed funding sources and management of any potential conflicts",
+      
+      TRUE ~ NA_character_
+    ),
+    review_critical_appraisal = paste0(
+  "AMSTAR-2: ", 
+  str_to_sentence(ifelse(is.na(amstar_overall_rating), "Not reported", amstar_overall_rating)),
+  " <br> ROBIS: ", 
+  str_to_sentence(ifelse(is.na(robis_overall_rating), "Not reported", robis_overall_rating))
+)
+  ) %>%
+  select(refid, review_coi, review_critical_appraisal)
+
+#select relevant appendix 4 info
+a4_info <- review_td %>%
+  #left_join(numelig_perreview) %>%
+  left_join(numinc_perreview) %>%
+  left_join(spo_review_info, by = "refid") %>%
+  mutate(search_date_format = ifelse(nchar(review_search_date) == 10, format(ymd(review_search_date), "%B %d, %Y"), review_search_date)) %>%
+  mutate(search_date_format = ifelse(nchar(review_search_date) == 7, format(ym(review_search_date), "%B %Y"), search_date_format)) %>%
+  mutate(across(everything(), ~ifelse(.x == -999, "Not reported", .x)),
+         n_included = as.character(n_included)#,
+         #n_eligible = as.character(n_eligible)
+         ) %>%
+  select(refid, review_author_year, starts_with("review_eligibility"), review_databases_searched,
+         search_date_format, n_included, review_flow_diagram, review_registration_number, review_availability_statement, 
+         review_coi, review_critical_appraisal) %>% # n_eligible,
+  arrange(str_to_lower(review_author_year))
+
+#create df of review_author_year and refid for merging
+review_idbyname <- review_td %>%
+  select(refid, review_author_year)
+
+#select citation info for eligible reviews
+review_citations <- review_elig_citations %>%
+  janitor::clean_names() %>%
+  left_join(review_idbyname) %>%
+  filter(!is.na(review_author_year)) %>%
+  rename(citation = bibliography) %>% 
+  select(refid, citation, title)
+
+#import linked citations for all references
+linked_ref_df <- import(here("data", "SPO_linked_references.csv")) %>%
+  janitor::clean_names()
+
+#pull list of included refids
+inc_rev <- review_citations$refid
+
+#transform for merging
+linked_ref_td <- linked_ref_df %>%
+  filter(refid %in% inc_rev) %>%
+  select(refid, linked_refid) %>%
+  left_join(review_citations) %>%
+  left_join(review_elig_citations, by = c("linked_refid" = "refid")) %>%
+  rename(main_citation = citation,
+         linked_citation = bibliography) %>%
+  select(refid, main_citation, starts_with("linked")) %>%
+  pivot_longer(cols = c(main_citation, linked_citation),
+               names_to = "citation_type",
+               values_to = "citation",
+               values_drop_na = TRUE) %>%
+  mutate(citation_refid = case_when(citation_type == "main_citation" ~ as.character(refid),
+                                    citation_type == "linked_citation" ~ as.character(linked_refid))) %>%
+  select(-c(linked_refid, citation_type, linked_references)) %>%
+  filter(refid != citation_refid)
+
+#create variable that combines all references for a review into one cell
+review_reports <- review_citations %>%
+  select(refid, citation) %>%
+  mutate(citation_refid = "") %>%
+  rbind(linked_ref_td) %>%
+  group_by(refid) %>%
+  summarize(all_reports = paste(citation, collapse = " <br><br> ")) %>%
+  mutate(all_reports = stringi::stri_trans_general(all_reports, "Latin-ASCII")) %>%
+  ungroup()
+
+
+#extract titles from citation df
+rev_titles <- review_citations %>%
+  select(refid, title)
+
+#merge titles and citations with other a4 info and format eligibility cells
+a4 <- a4_info %>%
+  left_join(rev_titles, by = "refid") %>%
+  left_join(review_reports, by = "refid") %>%
+  select(review_author_year, title, review_eligibility_participant:review_availability_statement, review_coi,
+         review_critical_appraisal, all_reports) %>%
+#cosmetics for table
+  mutate_at(vars(starts_with("review_eligibility"), review_availability_statement), list(~ str_replace_all(., "\\s+-\\s+(?=[A-Z])", "<br> - "))) %>%
+  mutate_at(vars(starts_with("review_eligibility"), review_availability_statement), ~ str_replace_all(., "- +([\"'a-zA-Z])", " <li>\\1")) %>%
+  mutate_at(vars(starts_with("review_eligibility")), ~ paste0("<ul>", ., "</ul>")) %>%
+  mutate(review_availability_statement = ifelse(str_detect(review_availability_statement, "<li>"),
+                                                paste0("<ul>", review_availability_statement, "</ul>"),
+                                                review_availability_statement))
+
+```
+
+
+```{r a4-formatting}
+#split data frame into list of data frames
+a4_dflist <- map(1:nrow(a4), ~a4[.x, ])
+
+#transfer to long format
+df_list_long <- map(a4_dflist, ~ .x %>%
+                      pivot_longer(cols = everything(),
+                                   names_to = "variable",
+                                   values_to = "value") %>%
+                      mutate(variable = case_when(variable == "review_author_year" ~ "Review",
+                                                  variable == "title" ~ "Title",
+                                                  variable == "review_eligibility_participant" ~ "Participants",
+                                                  variable == "review_eligibility_intervention" ~ "Interventions",
+                                                  variable == "review_eligibility_comparator" ~ "Comparisons",
+                                                  variable == "review_eligibility_outcome" ~ "Outcomes",
+                                                  variable == "review_eligibility_timing" ~ "Timing",
+                                                  variable == "review_eligibility_setting" ~ "Setting",
+                                                  variable == "review_eligibility_design" ~ "Design",
+                                                  variable == "review_databases_searched" ~ "Databases Searched",
+                                                  variable == "search_date_format" ~ "Search Date",
+                                                  variable == "review_flow_diagram" ~ "Prisma Diagram",
+                                                  variable == "review_registration_number" ~ "Registration",
+                                                  variable == "review_availability_statement" ~ "Data Availability Statement",
+                                                  variable == "review_coi" ~ "Conflict of Interest",
+                                                  variable == "review_critical_appraisal" ~ "Critical Appraisal",
+                                                #  variable == "n_eligible" ~ "Eligible Studies",
+                                                  variable == "n_included" ~ "Included Studies",
+                                                  variable == "all_reports" ~ "References",
+                                                  TRUE ~ variable)))
+
+#combine into one single data frame
+combined_a4 <- bind_rows(df_list_long, .id = "source") %>%
+  mutate(source = as.numeric(source))
+
+#create gt table for each for each review
+list_gt <- lapply(split(combined_a4, combined_a4$source), function(x) {
+  gt(x) %>%
+    cols_hide("source") %>%
+    cols_label(variable = "",
+               value = "") %>%
+    tab_style(style = list(cell_text(weight = "bold")),
+            locations = cells_body(columns = "variable")) %>%
+    tab_row_group(rows = 3:9, label = "Eligibility Criteria:") %>%
+    tab_row_group(rows = 1:2, label = "", id = "group1") %>%
+    tab_options(table.font.names = "Times New Roman",
+                table.width = pct(100)) %>%
+    tab_style(style = cell_text(weight = "bold"), locations = cells_row_groups()) %>%
+    tab_style(style = cell_text(align = "right"), locations = cells_body(columns = "variable", rows = 3:9)) %>%
+    fmt_markdown(columns = everything())
+})
+
+#add title
+a4_title_html <- '<h2 style="text-align:center;font-family:Times New Roman;font-size:20px;margin-bottom:5px;margin-top:25px;">
+  <div>Appendix 3</div>
+  <div style="margin-top:10px; margin-bottom:10px;">Characteristics of Included Reviews</div>
+</h2>'
+
+
+#extract HTML code of table
+html_code <- list_gt %>%
+  map(as_raw_html) %>%
+  reduce(paste) %>%
+  paste(a4_title_html, ., sep = "\n")
+
+#print in document
+htmltools::browsable(htmltools::HTML(html_code))
+```
+
+```{r a4-save}
+#save as HMTL
+#writeLines(html_code, here("outputs", "appendices", "appendix_3.html"))
+
+#test word output
+#couldnt get to work - output to excel and import into word
+#rio::export(combined_a4, here("outputs", "appendices", "a3_excel.xlsx"))
+
+# combined_a4 <- combined_a4 %>%
+#   mutate(source = paste("Review", source))
+
+# # EXPORT WORD
+# a4_word <- combined_a4 %>%
+#   mutate(
+#     value = value %>%
+#       str_replace_all("<ul>", "") %>%
+#       str_replace_all("</ul>", "") %>%
+#       str_replace_all("<li>", "• ") %>%
+#       str_replace_all("</li>", "\n")
+#   ) %>%
+#   gt(groupname_col = "source") %>%
+#   cols_hide("source") %>%
+#   cols_label(
+#     variable = "",
+#     value = ""
+#   ) %>%
+#   tab_style(
+#     style = cell_text(weight = "bold"),
+#     locations = cells_body(columns = "variable")
+#   ) %>%
+#   tab_options(
+#     table.font.names = "Times New Roman",
+#     table.width = pct(100)
+#   )#%>%
+#   #fmt_markdown(columns = everything())
+# 
+# gtsave(
+#   a4_word,
+#   filename = here::here("outputs", "appendices", "appendix_3.docx")
+# )
+
+```
+
+
+```{r export-rds}
+# #export appendices and tables for technical report (without titles)
+# 
+# #Combine all gt tables into a list
+# tables_list <- list(table1 = table1_formatted,
+#                     table2 = t2_formatted,
+#                     table3 = t3_formatted,
+#                     table4 = t4_formatted,
+#                     appendix1 = a1_formatted %>% tab_header(title = NULL, subtitle = NULL),
+#                     appendix2 = a2_formatted %>% tab_header(title = NULL, subtitle = NULL),
+#                     appendix3 = a3_formatted %>% tab_header(title = NULL, subtitle = NULL),
+#                     appendix4 = combined_a4,
+#                     appendix5 = combined_a5)
+# 
+# #Save as RDS object to data directory
+# saveRDS(tables_list, file = "data/tables_list.rds")
+```
+
+
+
+# Info for Translational Product
+
+Information for initial translational product (to fill out comms team excel file)
+
+```{r translational-results}
+# #study locations
+# count_country
+# 
+# #academic levels
+# #number/% studies in elementary or primary school
+# study_elem 
+# study_elem_per 
+# 
+# sum(!is.na(study_td$study_school_level_elementary_school)) + 
+# sum(!is.na(study_td$study_school_level_only_reported_primary_school))
+# 
+# #number/% studies in middle school
+# study_mid 
+# study_mid_per
+# 
+# #number/% studies in high or secondary school
+# study_high 
+# study_high_per 
+# 
+# sum(!is.na(study_td$study_school_level_high_school)) + 
+# sum(!is.na(study_td$study_school_level_only_reported_secondary_school))
+# 
+# #included studies
+# length(unique(study_td$refid))
+# 
+# #number of students
+# num_studs
+# 
+# #median age and range
+# min(study_td$study_age_average, na.rm = TRUE) 
+# max(study_td$study_age_average, na.rm = TRUE)
+# median(study_td$study_age_average, na.rm = TRUE)
+# 
+# #number of studies not reporting any race/ethnicity
+# race_cols <- c("study_percent_aian", "study_percent_asian", "study_percent_black", "study_percent_nhpi",
+#                "study_percent_white", "study_percent_hispanic", "study_percent_mixed", "study_percent_other")
+# num_raceNR <- sum(rowSums(is.na(study_td[race_cols])) == length(race_cols))
+# per_raceNR <- paste0(round(num_raceNR / length(unique(study_td$refid)) * 100, 2), "% of studies didn't report race/ethnicity")
+# per_raceNR
+# 
+# #average (or median) and SD of % white students
+# format_percent(median(study_td$study_percent_white, na.rm = TRUE) * 100, 2)
+# format_percent(mean(study_td$study_percent_white, na.rm = TRUE) * 100, 2)
+# format_percent(sd(study_td$study_percent_white, na.rm = TRUE) * 100, 2)
+# #DIFFERENCE IN MEDIAN AND MEAN DRIVEN BY 100% OF CANADIAN STUDY SAYING "OTHER RACE"
+# 
+# #median number of students per study and range
+# median(study_td$study_number_participants, na.rm = TRUE)
+# min(study_td$study_number_participants, na.rm = TRUE)
+# format_thousands(max(study_td$study_number_participants, na.rm= TRUE))
+# 
+# #total, and median/range of number of classrooms per study
+# sum(study_td$study_number_classrooms, na.rm = TRUE)
+# median(study_td$study_number_classrooms, na.rm = TRUE)
+# min(study_td$study_number_classrooms, na.rm = TRUE)
+# max(study_td$study_number_classrooms, na.rm = TRUE)
+# 
+# #total, and median/range of number of schools per study
+# sum(study_td$study_number_schools, na.rm = TRUE)
+# median(study_td$study_number_schools, na.rm = TRUE)
+# min(study_td$study_number_schools, na.rm = TRUE)
+# max(study_td$study_number_schools, na.rm = TRUE)
+# 
+# #number and percentage of facilitators/providers
+# count_intprovider 
+# 
+# #number of students per MA outcome
+# ## Anxiety Diagnoses
+# ad_ma_df <- import(here("data", "Anxiety_diagnosis.xlsx"))
+# ad_refid <- unique(ad_ma_df$refid) #8
+# ad_num_stud <- study_td %>% 
+#   filter(refid %in% ad_refid) %>% 
+#   summarize(n_stud = sum(study_number_participants)) %>% 
+#   pull(n_stud)
+# ad_num_stud
+# 
+# ## Anxiety Symptoms
+# as_ma_df <- import(here("data", "Anxiety_Symptoms.xlsx"))
+# as_refid <- unique(as_ma_df$refid) #32
+# as_num_stud <- study_td %>% 
+#   filter(refid %in% as_refid) %>% 
+#   filter(refid != 10062) %>% #removed from analysis - MSC
+#   summarize(n_stud = sum(study_number_participants)) %>% 
+#   pull(n_stud)
+# as_num_stud
+# 
+# ## Depression Symptoms
+# ds_ma_df <- import(here("data", "Depression_Symptoms.xlsx"))
+# ds_refid <- unique(ds_ma_df$refid) #18
+# ds_num_stud <- study_td %>% 
+#   filter(refid %in% ds_refid) %>% 
+#   filter(refid != 10062) %>%  #removed from analysis - MSC
+#   summarize(n_stud = sum(study_number_participants)) %>% 
+#   pull(n_stud)
+# ds_num_stud
+
+```
+
+
+
+## END

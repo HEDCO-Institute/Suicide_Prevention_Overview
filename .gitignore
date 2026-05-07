@@ -47,3 +47,13 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Private/working folder
+do_not_push/
+
+# gitignore
+#.gitignore
+
+# renv
+renv/library/
+renv/staging/
