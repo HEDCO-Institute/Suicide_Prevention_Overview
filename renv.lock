@@ -3253,6 +3253,12 @@
       "Maintainer": "Hadley Wickham <hadley@rstudio.com>",
       "Repository": "CRAN"
     },
+    "quarto": {
+      "Package": "quarto",
+      "Version": "1.5.1",
+      "Source": "Repository",
+      "Repository": "CRAN"
+    },
     "ragg": {
       "Package": "ragg",
       "Version": "1.2.5",
