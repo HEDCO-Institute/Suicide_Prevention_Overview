@@ -1218,7 +1218,7 @@ spo_review_info <- spo_review_level %>%
     review_critical_appraisal = paste0(
       "<ul>",
       "<li><strong>AMSTAR-2:</strong> ", str_to_sentence(amstar_overall_rating), "</li>",
-      "<li><strong>ROBIS:</strong> ", str_to_sentence(robis_overall_rating), "</li>",
+      "<li><strong>ROBIS:</strong> ", str_to_sentence(robis_overall_rating), " risk of bias</li>",
       "</ul>"
     )
   ) %>%
