@@ -2,7 +2,7 @@
 
 **Date of Release:** 4/8/2026  
 **Title:** Effectiveness of school-based suicide prevention interventions: An overview of systematic reviews  
-**OSF Component for Publication:** <https://osf.io/b7dhj/> <!-- TODO: update with correct OSF component for OVERVIEW specifically -->
+**OSF Component for Publication:** <https://osf.io/b7dhj/> <!-- TODO: update with correct OSF component for OVERVIEW specifically --> <br>
 **Package Author:** Shaina Trevino 
 
 <!-- TODO: ADD LINK TO PRE-PRINT SOMEWHERE IN THE BEGINNING -->
