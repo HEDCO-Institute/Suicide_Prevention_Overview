@@ -36,7 +36,7 @@ library(glue)
 # 3. Import data ----------------------------------------------------------
 
 # Eligibility (with linked refs; datarama report)
-spo_eligibility_raw <- import(here("data", "SPO_screening_eligibility.xlsx")) %>% 
+spo_eligibility_raw <- import(here("data", "SPO_screening_eligibility_2026-06-03.xlsx")) %>% 
   janitor::clean_names()
 # Check unique IDs
 length(unique(spo_eligibility_raw$refid)) == nrow(spo_eligibility_raw)
@@ -58,12 +58,19 @@ spo_ma_estimates <- import(here("data", "SPO_review_ma_estimates.xlsx")) %>%
   janitor::clean_names() %>% 
   distinct(across(-user), .keep_all = TRUE) 
   
+# Import outcome-specific citation matrix
+outcome_cm_path <- here("data", "SPO_outcome_citation_matrix.xlsx")
+
+ideation_raw     <- read_excel(outcome_cm_path, sheet = "Ideation Matrix", col_names = TRUE)
+attempts_raw     <- read_excel(outcome_cm_path, sheet = "Attempts Matrix", col_names = TRUE)
+competencies_raw <- read_excel(outcome_cm_path, sheet = "Competencies", col_names = TRUE)
 
 
 # Import citation matrix
-elig_path <- here("data", "Suicide_citation_matrix_reconciled.xlsx")
+elig_path <- here("data", "SPO_citation_matrix_reconciled.xlsx")
 
-citation_matrix <- read_excel(elig_path, sheet = "Citation Matrix", col_names = FALSE)
+citation_matrix <- read_excel(elig_path, sheet = "Citation Matrix", col_names = TRUE) %>% 
+  select(-refid)
 
 # 4. Helper functions -----------------------------------------------------
 
@@ -121,12 +128,111 @@ format_percent <- function(x, digits, force_decimal = FALSE) {
   return(percentage)
 }
 
+# Function to clean the outcome matrix data for processing
+clean_outcome_matrix <- function(df) {
+  names(df) <- str_trim(names(df))
+  
+  refid_col   <- names(df)[str_detect(str_to_lower(names(df)), "^refid$")]
+  study_col   <- names(df)[str_detect(str_to_lower(names(df)), "^study$")]
+  current_col <- names(df)[str_detect(str_to_lower(names(df)), "^current")]
+  notes_col   <- names(df)[str_detect(str_to_lower(names(df)), "^notes$")]
+  
+  df %>%
+    select(-any_of(c(refid_col, notes_col))) %>%
+    rename(study = all_of(study_col),
+           current_review = all_of(current_col))
+}
+
+# Function to build overlap heatmaps for outcome-specific citation matrix
+build_overlap_heatmap <- function(df, filter_current = FALSE,
+                                  fontsize = 12, fontsize_diag = 8) {
+  
+  if (filter_current) {
+    df <- df %>% filter(current_review == "Yes")
+  }
+  
+  cca_input <- df %>%
+    mutate_at(vars(-study), ~ifelse(. == "Yes", 1, 0)) %>%
+    select(-current_review)
+  
+  fig <- cca_heatmap(cca_input, decimal_digits = 0, fontsize = fontsize, fontsize_diag = fontsize_diag) +
+    ggplot2::theme(
+      plot.caption = ggplot2::element_text(size = 20, margin = ggplot2::margin(30, 0, 0, 0)),
+      legend.title = ggplot2::element_text(size = 20, face = "bold", vjust = 4),
+      legend.text = ggplot2::element_text(size = 20),
+      legend.key.size = ggplot2::unit(1.0, "cm"),
+      legend.title.align = 0.5,
+      legend.text.align = 0.5,
+      axis.text.x = ggplot2::element_text(size = 26),
+      axis.text.y = ggplot2::element_text(size = 26),
+      axis.title = ggplot2::element_blank(),
+      axis.ticks = ggplot2::element_blank(),
+      axis.line = ggplot2::element_blank(),
+      panel.border = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+    )
+  
+  list(plot = fig, cca_input = cca_input)
+}
+
+# Function to compute CCA for outcome-specific citation matrix
+compute_overlap_stats <- function(df) {
+  
+  # Range/median number of primary studies included per review
+  # (transpose so reviews become rows, studies become columns)
+  cmt <- as.data.frame(t(df))
+  df_overlap <- cmt %>%
+    slice(-1:-2) %>%
+    mutate(num_stud = rowSums(. == "Yes"))
+  
+  # Overlap among ALL studies for this outcome
+  cm_overlap <- df %>%
+    select(-current_review) %>%
+    mutate(morethanone = ifelse(rowSums(. == "Yes") > 1, "yes", "no"))
+  
+  num_overlap     <- sum(cm_overlap$morethanone == "yes")
+  num_overlap_per <- num_overlap / nrow(cm_overlap) * 100
+  
+  # Overall CCA across all studies for this outcome
+  ccar_input <- df %>%
+    select(-current_review) %>%
+    mutate_at(vars(-study), ~ifelse(. == "Yes", 1, 0))
+  cca_all <- cca(ccar_input)
+  
+  # Overlap restricted to studies meeting current review eligibility criteria
+  elig_df <- df %>%
+    filter(current_review == "Yes") %>%
+    select(-current_review)
+  
+  elig_overlap <- elig_df %>%
+    mutate(morethanone = ifelse(rowSums(. == "Yes") > 1, "yes", "no"))
+  
+  num_elig_overlap     <- sum(elig_overlap$morethanone == "yes")
+  num_elig_overlap_per <- ifelse(num_elig_overlap == 0, 0, num_elig_overlap / nrow(elig_overlap) * 100)
+  
+  ccar_input_elig <- elig_df %>%
+    mutate_at(vars(-study), ~ifelse(. == "Yes", 1, 0))
+  cca_elig <- cca(ccar_input_elig)
+  
+  list(
+    num_stud_range        = range(df_overlap$num_stud),
+    num_stud_median       = round(median(df_overlap$num_stud)),
+    n_studies_total       = nrow(df),
+    num_overlap           = num_overlap,
+    num_overlap_per       = num_overlap_per,
+    cca_all               = cca_all,
+    n_studies_elig        = nrow(elig_df),
+    num_elig_overlap      = num_elig_overlap,
+    num_elig_overlap_per  = num_elig_overlap_per,
+    cca_elig              = cca_elig
+  )
+}
+
 # 5. Clean and prepare data -----------------------------------------------
 
 # Eligibility
-colnames(citation_matrix) <- citation_matrix[1,]
-td_cm <- citation_matrix %>% 
-  slice(-1)
+
+td_cm <- citation_matrix
 
 spo_eligibility <- spo_eligibility_raw %>% 
   mutate(
@@ -154,6 +260,11 @@ robis_rating_td <- spo_review_level %>%
   select(refid, review_author_year, ends_with("decision"), robis_overall_a, robis_overall_b, robis_overall_c, 
          robis_overall_rating)
 
+# Outcome-specific citation matrices
+ideation_cm     <- clean_outcome_matrix(ideation_raw)
+attempts_cm     <- clean_outcome_matrix(attempts_raw)
+competencies_cm <- clean_outcome_matrix(competencies_raw)
+
   
 # 6. Eligibility Results --------------------------------------------------
 
@@ -161,9 +272,9 @@ robis_rating_td <- spo_review_level %>%
 overview_counts <- list(
   records_identified = nrow(spo_eligibility) + nrow(spo_duplicates),
   records_screened = nrow(spo_eligibility),
-  records_kept = sum(spo_eligibility$screening_decision == "Keep", na.rm = TRUE),
+  records_kept = sum(spo_eligibility$screening_decision == "Keep"),
   reports_not_retrieved = sum(spo_eligibility$pdf_retrieved == "No", na.rm = TRUE),
-  reports_assessed = sum(spo_eligibility$screening_decision == "Keep", na.rm = TRUE) - 
+  reports_assessed = sum(spo_eligibility$screening_decision == "Keep") - 
     sum(spo_eligibility$pdf_retrieved == "No", na.rm = TRUE),
   reviews_included = nrow(spo_review_level),
   reports_included = sum(
@@ -326,7 +437,9 @@ cmt <- as.data.frame(t(citation_matrix))
 # Remove first row of column names and second row with current study inclusions, and
 # Create new variable to calculate number of studies in each review
 df_overlap <- cmt %>% 
-  slice(-1) %>% 
+  #slice(-1) %>% 
+  #with current review
+  slice(-1:-2) %>% 
   mutate(num_stud = rowSums(. == "Yes")) 
 
 # Range and median of number of studies in each review
@@ -336,6 +449,7 @@ median(df_overlap$num_stud)
 # Number and percentage of primary studies included in more than one review
 #create flag for if study is in more than one review
 cm_overlap <- td_cm %>% 
+  select(-`Current Review`) %>% 
   mutate(morethanone = ifelse(rowSums(. == "Yes") > 1, "yes", "no"))
 
 # Number and % included in more than one review
@@ -345,10 +459,35 @@ num_inc_overlap_per <- sum(cm_overlap$morethanone == "yes") / nrow(cm_overlap) *
 # Overall CCA percentage for all primary studies included across reviews
 #create dataframe for ccaR input (1 = included; 0 = excluded)
 ccar_input <- td_cm %>% 
+  select(-`Current Review`) %>% 
   mutate_at(vars(-study), ~ifelse(. == "Yes", 1, 0))  
 
 #calculate overall CCA
 cca_included <- cca(ccar_input) 
+
+#Number and percentage of eligible primary studies included in more than one review
+#filter for eligible primary studies
+elig_cm <- td_cm %>%
+  filter(`Current Review` == "Yes")  %>%
+  select(-`Current Review`)
+
+#create flag if eligible study is included in more than one review
+elig_overlap <- elig_cm %>%
+  mutate(morethanone = ifelse(rowSums(. == "Yes") >1, "yes", "no"))
+
+#number and % of eligible studies included in more than one review
+num_elig_overlap <- sum(elig_overlap$morethanone == "yes")
+num_elig_overlap_per <- ifelse(num_elig_overlap == 0, 0, num_elig_overlap / nrow(elig_overlap) * 100)
+
+
+# Overall CCA percentage for eligible studies only
+ccar_input_elig <- td_cm %>% 
+  filter(`Current Review` == "Yes") %>% 
+  select(-`Current Review`) %>% 
+  mutate_at(vars(-study), ~ifelse(. == "Yes", 1, 0))  
+
+# Calculate eligible-study CCA
+cca_eligible <- cca(ccar_input_elig)
 
 
 # 10. Create tables -------------------------------------------------------
@@ -402,7 +541,8 @@ table1_formatted <- t1 %>%
               table_body.hlines.color = "white",
               table.font.names = "Times New Roman")
 
-# # Save table
+### Save table ----------
+
 # # Save as word doc
 # gtsave(table1_formatted, filename = "table2_word.docx", device = "word", path = here("outputs", "tables"), landscape = TRUE) #landscape doesn't work
 # 
@@ -474,7 +614,7 @@ t2_formatted <- t2 %>%
              colors = scales::col_factor(palette = c("#ab1d1a", "#8ace7e", "#e03531", "#ffda66", "#e03531", "#b2dfa8", "#8ace7e"),
                                          domain = c("CL", "H", "L", "M", "N", "PY", "Y")))
 
-# # Save table
+### Save table ------------
 # # Save as HTML
 # gtsave(t2_formatted, filename = "table3_amstar.html", path = here("outputs", "tables"))
 # 
@@ -528,7 +668,8 @@ t3_formatted <- t3 %>%
                                          domain = c("High", "Low", "No", "No Information", "Probably No", "Probably Yes", "Unclear", "Yes")))
 
 
-# # Save table
+### Save table----------------
+
 # # Save as html
 # gtsave(t3_formatted, filename = "table4_robis.html", path = here("outputs", "tables"))
 # 
@@ -629,7 +770,8 @@ t5_formatted <- t5_with_groups %>%
     review_author_year ~ pct(10)
   )
 
-# # Save table
+### Save table---------------------
+
 # # Save as html
 # gtsave(t5_formatted, filename = "table5_estimates.html", path = here("outputs", "tables"))
 # 
@@ -792,7 +934,8 @@ t6_formatted <- t6_with_groups %>%
     table.font.names = "Times New Roman"
   )
 
-# # Save table
+### Save table ---------------------------
+
 # # Save as html
 # gtsave(t6_formatted, filename = "table6_estimates.html", path = here("outputs", "tables"))
 # 
@@ -820,6 +963,7 @@ make_prisma_overview_plot <- function(elig_df, dupe_df, review_df) {
   exclusion_reasons_summary <- elig_df %>% 
     mutate(reason = dplyr::case_when(
       eligibility_reference_type == "Study" ~ "Ineligible study design",
+      str_detect(eligibility_exclude_reason, "Unclear") ~ "Awaiting Classification",
       TRUE ~ as.character(eligibility_exclude_reason))) %>% 
     filter(!is.na(reason)) %>% 
     count(reason, name = "n") %>% 
@@ -961,7 +1105,7 @@ spo_eligibility <- spo_eligibility %>%
 # Use function
 spo_overview_prisma <- make_prisma_overview_plot(elig_df = spo_eligibility, dupe_df = spo_duplicates, review_df = spo_review_level)
 
-# # Save
+### Save figure-----------------
 # ggsave(filename = "outputs/figures/figure1_prisma.png", spo_overview_prisma)
 
 
@@ -986,7 +1130,7 @@ asterisk_caption <- if(length(asterisk_studies) == 0){
 
 # Identify review columns with trailing asterisks
 starred_reviews <- names(td_cm) %>%
-  .[. != "study"] %>%
+  .[!. %in% c("study", "Current Review")] %>%
   .[str_detect(., "\\*$")] %>%
   str_remove("\\*$")
 
@@ -1010,7 +1154,8 @@ names(td_cm_clean) <- names(td_cm_clean) %>%
 
 # Format citation matrix including our review
 cca_inc <- td_cm_clean %>% 
-  mutate_at(vars(-study), ~ifelse(. == "Yes", 1, 0)) 
+  mutate_at(vars(-study), ~ifelse(. == "Yes", 1, 0)) %>% 
+  select(-`Current Review`)
 
 # Create heatmap first
 f2 <- cca_heatmap(cca_inc, decimal_digits = 0, fontsize = 12, fontsize_diag = 8)
@@ -1041,7 +1186,7 @@ f2 <- f2 +
     panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
   )
 
-# # Save figure
+### Save figure ------------------
 # # Set image dimensions and file path to save
 # png(here("outputs", "figures", "figure2_heatmap.png"), width = 1000, height = 1000)
 # 
@@ -1050,6 +1195,56 @@ f2 <- f2 +
 # 
 # # Save png of plot
 # dev.off()
+
+
+## Figure 3. Overlap of eligible studies across systematic reviews ----
+
+# Format citation matrix for only eligible studies in Current Review
+cca_elig <- td_cm_clean %>% 
+  filter(`Current Review` == "Yes") %>% 
+  mutate_at(vars(-study), ~ifelse(. == "Yes", 1, 0)) %>% 
+  select(-`Current Review`)
+
+# Create heatmap first
+f3 <- cca_heatmap(cca_elig, decimal_digits = 0, fontsize = 12, fontsize_diag = 8)
+
+# Grab existing caption from cca_heatmap and append note
+existing_caption_f3 <- f3$labels$caption
+combined_caption_f3 <- paste(
+  c(existing_caption_f3, star_note),
+  collapse = "\n"
+)
+
+# Apply updated caption and theme
+f3 <- f3 +
+  ggplot2::labs(caption = combined_caption_f3) +
+  ggplot2::theme(
+    plot.caption = ggplot2::element_text(size = 20, margin = ggplot2::margin(30,0,0,0)),
+    legend.title = ggplot2::element_text(size = 20, face = "bold", vjust = 4),
+    legend.text = ggplot2::element_text(size = 20),
+    legend.key.size = ggplot2::unit(1.0, "cm"),
+    legend.title.align = 0.5,
+    legend.text.align = 0.5,
+    axis.text.x = ggplot2::element_text(size = 26),
+    axis.text.y = ggplot2::element_text(size = 26),
+    axis.title = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+  )
+
+### Save figure------------------
+
+# # Set image dimensions and file path to save
+# png(here("outputs", "figures", "figure3_heatmap.png"), width = 1000, height = 1000)
+# 
+# # Show plot
+# f3
+# 
+# # Save png of plot
+# dev.off()
+
 
 
 # 12. Create appendices ---------------------------------------------------
@@ -1113,7 +1308,7 @@ a1_formatted <- a1_info %>%
     locations = cells_title(groups = "title")
   )
 
-
+### Save ------------------
 # # Save as word
 # gtsave(a1_formatted, filename = "appendix1_word.docx", path = here("outputs", "appendices"))
 # 
@@ -1157,6 +1352,7 @@ a3_formatted <- a3_info %>%
             locations = cells_title(groups = "title"))
 
 
+### Save -------------------
 # # Save as word
 # gtsave(a3_formatted, filename = "appendix2_word.docx", path = here("outputs", "appendices"))
 # 
@@ -1454,8 +1650,10 @@ html_code <- list_gt %>%
   reduce(paste) %>%
   paste(a4_title_html, ., sep = "\n")
 
+### Save -------------------
+
 # # Save as HMTL
- writeLines(html_code, here("outputs", "appendices", "appendix_3.html"))
+# writeLines(html_code, here("outputs", "appendices", "appendix_3.html"))
 # 
 # # Export in word
 # a4_word <- combined_a4 %>%
@@ -1486,16 +1684,67 @@ html_code <- list_gt %>%
 #   a4_word,
 #   filename = here::here("outputs", "appendices", "appendix3_word.docx")
 # )
+## Appendix 5. Outcome-Specific Citation Matrix Figures and Overlap Statistics ------
 
-# 13. Save objects for manuscript reporting ------------------------
+## Suicidal ideation outcomes 
+ideation_all      <- build_overlap_heatmap(ideation_cm, filter_current = FALSE)
+f4                <- ideation_all$plot
+ideation_cca_all  <- ideation_all$cca_input
 
-# # Get names of objects currently in the environment
-# bundle_names <- ls()
-# 
-# # Create named list of all remaining objects
-# bundle <- mget(bundle_names, inherits = TRUE)
-# 
-# # Save one file
-# saveRDS(bundle, here("outputs", "objects", "analysis_script_objects.rds"))
+ideation_elig      <- build_overlap_heatmap(ideation_cm, filter_current = TRUE)
+f5                 <- ideation_elig$plot
+ideation_cca_elig  <- ideation_elig$cca_input
+
+## Suicide attempt outcomes 
+attempts_all      <- build_overlap_heatmap(attempts_cm, filter_current = FALSE)
+f6                <- attempts_all$plot
+attempts_cca_all  <- attempts_all$cca_input
+
+attempts_elig      <- build_overlap_heatmap(attempts_cm, filter_current = TRUE)
+f7                 <- attempts_elig$plot
+attempts_cca_elig  <- attempts_elig$cca_input
+
+## Suicide-related competencies outcomes 
+competencies_all      <- build_overlap_heatmap(competencies_cm, filter_current = FALSE)
+f8                    <- competencies_all$plot
+competencies_cca_all  <- competencies_all$cca_input
+
+competencies_elig      <- build_overlap_heatmap(competencies_cm, filter_current = TRUE)
+f9                     <- competencies_elig$plot
+competencies_cca_elig  <- competencies_elig$cca_input
+
+## Overlap/CCA summary statistics per outcome (for main-text narrative) 
+ideation_stats     <- compute_overlap_stats(ideation_cm)
+attempts_stats     <- compute_overlap_stats(attempts_cm)
+competencies_stats <- compute_overlap_stats(competencies_cm)
+
+outcome_cca_summary <- tibble(
+  outcome          = c("Suicidal ideation", "Suicide attempts", "Suicide-related competencies"),
+  cca_all_percent  = c(ideation_stats$cca_all$CCA_Percentage,
+                       attempts_stats$cca_all$CCA_Percentage,
+                       competencies_stats$cca_all$CCA_Percentage),
+  cca_elig_percent = c(ideation_stats$cca_elig$CCA_Percentage,
+                       attempts_stats$cca_elig$CCA_Percentage,
+                       competencies_stats$cca_elig$CCA_Percentage)
+)
+### Save ----
+# png(here("outputs", "figures", "figure4_ideation_overlap.png"), width = 1000, height = 1000); f4; dev.off()
+# png(here("outputs", "figures", "figure5_ideation_overlap_eligible.png"), width = 1000, height = 1000); f5; dev.off()
+# png(here("outputs", "figures", "figure6_attempts_overlap.png"), width = 1000, height = 1000); f6; dev.off()
+# png(here("outputs", "figures", "figure7_attempts_overlap_eligible.png"), width = 1000, height = 1000); f7; dev.off()
+# png(here("outputs", "figures", "figure8_competencies_overlap.png"), width = 1000, height = 1000); f8; dev.off()
+# png(here("outputs", "figures", "figure9_competencies_overlap_eligible.png"), width = 1000, height = 1000); f9; dev.off()
+
+
+# # # 14. Save objects for manuscript reporting ------------------------
+#
+# Get names of objects currently in the environment
+bundle_names <- ls()
+
+# Create named list of all remaining objects
+bundle <- mget(bundle_names, inherits = TRUE)
+
+# Save one file
+saveRDS(bundle, here("outputs", "objects", "analysis_script_objects.rds"))
 
 
