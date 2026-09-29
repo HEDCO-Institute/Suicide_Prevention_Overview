@@ -96,4 +96,51 @@ combined_caption <- paste(
 
 ```
 
+## Figure 3. Overlap of studies evaluating inteventions delivered to students during school time across systematic reviews {#sec-figure3}
+
+
+```{r}
+#| #label: fig-figure3
+#| #fig-cap: "Overlap of specific interventions amongst Reviews"
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 7
+#| fig-height: 6
+#| dpi: 300
+#| out-width: "100%"
+
+
+# Create heatmap first
+f3 <- cca_heatmap(cca_elig, decimal_digits = 0, fontsize = 8, fontsize_diag = 5)
+
+# Grab existing caption from cca_heatmap and append note
+existing_caption <- f3$labels$caption
+combined_caption <- paste(
+  c(existing_caption, star_note),
+  collapse = "\n"
+)
+
+# Apply updated caption and theme
+ f3 +
+  ggplot2::labs(caption = combined_caption) +
+  ggplot2::theme(
+    plot.caption = ggplot2::element_text(size = 11, margin = ggplot2::margin(30,0,0,0)),
+    legend.title = ggplot2::element_text(size = 16, face = "bold", vjust = 4),
+    legend.text = ggplot2::element_text(size = 14),
+    legend.key.size = ggplot2::unit(1.0, "cm"),
+    legend.title.align = 0.5,
+    legend.text.align = 0.5,
+    axis.text.x = ggplot2::element_text(size = 18),
+    axis.text.y = ggplot2::element_text(size = 18),
+    axis.title = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+  )
+
+
+```
+
 

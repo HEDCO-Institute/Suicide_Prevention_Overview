@@ -2,6 +2,8 @@
 ```{r}
 #| include: false
 
+library(ccaR)
+
 objs <- readRDS(here::here("outputs", "objects", "analysis_script_objects.rds"))
 list2env(objs, envir = knitr::knit_global())
 
@@ -51,3 +53,207 @@ htmltools::browsable(htmltools::HTML(html_code))
 
 ```
 
+## Appendix 4. Overlap of Outcome-Specific Citation Matrices Across Systematic Reviews {#sec-appendix4}
+
+### Suicidal Ideation Outcomes
+
+```{r}
+#| #label: fig-a4-1
+#| #fig-cap: "Overlap of Suicidal Ideation Outcome Studies Across Reviews"
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 7
+#| fig-height: 6
+#| dpi: 300
+#| out-width: "100%"
+
+f4 <- cca_heatmap(ideation_cca_all, decimal_digits = 0, fontsize = 8, fontsize_diag = 5)
+
+
+f4 +
+  ggplot2::theme(
+    plot.caption = ggplot2::element_text(size = 11, margin = ggplot2::margin(30,0,0,0)),
+    legend.title = ggplot2::element_text(size = 16, face = "bold", vjust = 4),
+    legend.text = ggplot2::element_text(size = 14),
+    legend.key.size = ggplot2::unit(1.0, "cm"),
+    legend.title.align = 0.5,
+    legend.text.align = 0.5,
+    axis.text.x = ggplot2::element_text(size = 18),
+    axis.text.y = ggplot2::element_text(size = 18),
+    axis.title = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+  )
+
+```
+
+```{r}
+#| #label: fig-a4-2
+#| #fig-cap: "Overlap of Suicidal Ideation Outcome Studies Across Reviews (Current Review Eligible Studies)"
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 7
+#| fig-height: 6
+#| dpi: 300
+#| out-width: "100%"
+
+f5 <- cca_heatmap(ideation_cca_elig, decimal_digits = 0, fontsize = 8, fontsize_diag = 5)
+
+
+f5 +
+  ggplot2::theme(
+    plot.caption = ggplot2::element_text(size = 11, margin = ggplot2::margin(30,0,0,0)),
+    legend.title = ggplot2::element_text(size = 16, face = "bold", vjust = 4),
+    legend.text = ggplot2::element_text(size = 14),
+    legend.key.size = ggplot2::unit(1.0, "cm"),
+    legend.title.align = 0.5,
+    legend.text.align = 0.5,
+    axis.text.x = ggplot2::element_text(size = 18),
+    axis.text.y = ggplot2::element_text(size = 18),
+    axis.title = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+  )
+
+```
+
+### Suicide Attempt Outcomes
+
+```{r}
+#| #label: fig-a4-3
+#| #fig-cap: "Overlap of Suicide Attempt Outcome Studies Across Reviews"
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 6
+#| dpi: 300
+#| out-width: "100%"
+
+f6 <- cca_heatmap(attempts_cca_all, decimal_digits = 0, fontsize = 7, fontsize_diag = 5)
+
+f6 +
+  ggplot2::theme(
+    plot.caption = ggplot2::element_text(size = 11, margin = ggplot2::margin(30,0,0,0)),
+    legend.title = ggplot2::element_text(size = 16, face = "bold", vjust = 4),
+    legend.text = ggplot2::element_text(size = 14),
+    legend.key.size = ggplot2::unit(1.0, "cm"),
+    legend.title.align = 0.5,
+    legend.text.align = 0.5,
+    axis.text.x = ggplot2::element_text(size = 16),
+    axis.text.y = ggplot2::element_text(size = 16),
+    axis.title = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+  )
+
+```
+
+```{r}
+#| #label: fig-a4-4
+#| #fig-cap: "Overlap of Suicide Attempt Outcome Studies Across Reviews (Current Review Eligible Studies)"
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 6
+#| dpi: 300
+#| out-width: "100%"
+
+f7 <- cca_heatmap(attempts_cca_elig, decimal_digits = 0, fontsize = 7, fontsize_diag = 5)
+
+f7 +
+  ggplot2::theme(
+    plot.caption = ggplot2::element_text(size = 11, margin = ggplot2::margin(30,0,0,0)),
+    legend.title = ggplot2::element_text(size = 16, face = "bold", vjust = 4),
+    legend.text = ggplot2::element_text(size = 14),
+    legend.key.size = ggplot2::unit(1.0, "cm"),
+    legend.title.align = 0.5,
+    legend.text.align = 0.5,
+    axis.text.x = ggplot2::element_text(size = 16),
+    axis.text.y = ggplot2::element_text(size = 16),
+    axis.title = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+  )
+
+```
+
+### Suicide-Related Competencies Outcomes
+
+```{r}
+#| #label: fig-a4-5
+#| #fig-cap: "Overlap of Suicide-Related Competencies Outcome Studies Across Reviews"
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 7
+#| fig-height: 6
+#| dpi: 300
+#| out-width: "100%"
+
+f8 <- cca_heatmap(competencies_cca_all, decimal_digits = 0, fontsize = 8, fontsize_diag = 5)
+
+
+f8 +
+  ggplot2::theme(
+    plot.caption = ggplot2::element_text(size = 11, margin = ggplot2::margin(30,0,0,0)),
+    legend.title = ggplot2::element_text(size = 16, face = "bold", vjust = 4),
+    legend.text = ggplot2::element_text(size = 14),
+    legend.key.size = ggplot2::unit(1.0, "cm"),
+    legend.title.align = 0.5,
+    legend.text.align = 0.5,
+    axis.text.x = ggplot2::element_text(size = 18),
+    axis.text.y = ggplot2::element_text(size = 18),
+    axis.title = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+  )
+
+```
+
+```{r}
+#| #label: fig-a4-6
+#| #fig-cap: "Overlap of Suicide-Related Competencies Outcome Studies Across Reviews (Current Review Eligible Studies)"
+#| echo: false
+#| message: false
+#| warning: false
+#| fig-width: 7
+#| fig-height: 6
+#| dpi: 300
+#| out-width: "100%"
+
+f9 <- cca_heatmap(competencies_cca_elig, decimal_digits = 0, fontsize = 8, fontsize_diag = 5)
+
+
+f9 +
+
+  ggplot2::theme(
+    plot.caption = ggplot2::element_text(size = 11, margin = ggplot2::margin(30,0,0,0)),
+    legend.title = ggplot2::element_text(size = 16, face = "bold", vjust = 4),
+    legend.text = ggplot2::element_text(size = 14),
+    legend.key.size = ggplot2::unit(1.0, "cm"),
+    legend.title.align = 0.5,
+    legend.text.align = 0.5,
+    axis.text.x = ggplot2::element_text(size = 18),
+    axis.text.y = ggplot2::element_text(size = 18),
+    axis.title = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(colour = "grey80", linetype = "dashed")
+  )
+
+```

@@ -68,6 +68,12 @@ Correspondence should be addressed to the study guarantor: Sean Grant, HEDCO Ins
 # #PREVIEW
 # quarto::quarto_preview(here::here("manuscript"))
 
+# quarto::quarto_render(
+#     input = here::here("manuscript"),
+#     execute_dir = here::here() #update to take out "manuscript" from here due to render warnings
+# )
+
+
 ```
 
 
